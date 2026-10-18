@@ -1,6 +1,6 @@
 // Turn a tool result (webtools Result.to_dict) into DOM.
 import { fmt, escapeHtml, richText } from './format.js';
-import { icon, STATUS_ICON, STATUS_LABEL } from './icons.js';
+import { icon, STATUS_ICON, STATUS_LABEL, BADGE_LABEL } from './icons.js';
 import { renderChart, chartRows } from './charts.js';
 
 const h = (html) => { const t = document.createElement('template'); t.innerHTML = html.trim(); return t.content.firstElementChild; };
@@ -60,12 +60,14 @@ export function openLightbox(src, caption) {
 }
 
 function figureCard(fig, i) {
-  const src = `data:${fig.mime || 'image/png'};base64,${fig.png}`;
+  const mime = fig.mime || 'image/png';
+  const src = `data:${mime};base64,${fig.png}`;
+  const ext = { 'image/gif': 'gif', 'image/jpeg': 'jpg', 'image/svg+xml': 'svg' }[mime] || 'png';
   const caption = fig.caption || `Abbildung ${i + 1}`;
   const card = h(`<figure class="card figure-card" style="margin:0">
     <div class="head" style="display:flex;justify-content:space-between;gap:10px;align-items:flex-start">
-      <div><h3>${escapeHtml(caption)}</h3><span class="badge">${icon('image', 'width="13" height="13"')} Original-Grafik des Frameworks (Matplotlib, im Browser gerendert)</span></div>
-      <a class="btn ghost sm" download="${slug(caption)}.png" href="${src}" title="PNG speichern">${icon('download')}<span class="sr-only">PNG</span></a></div>
+      <div><h3>${escapeHtml(caption)}</h3><span class="badge">${icon('image', 'width="13" height="13"')} ${mime === 'image/gif' ? 'Animation' : 'Original-Grafik'} des Frameworks (Matplotlib, im Browser gerendert)</span></div>
+      <a class="btn ghost sm" download="${slug(caption)}.${ext}" href="${src}" title="${ext.toUpperCase()} speichern">${icon('download')}<span class="sr-only">${ext.toUpperCase()}</span></a></div>
     <img src="${src}" alt="${escapeHtml(caption)}" loading="lazy"></figure>`);
   card.querySelector('img').addEventListener('click', () => openLightbox(src, caption));
   return card;
@@ -83,7 +85,7 @@ export function renderResult(root, result) {
     for (const m of result.metrics) {
       grid.appendChild(h(`<div class="metric"><div class="l">${escapeHtml(m.label)}</div>
         <div class="v">${escapeHtml(fmt(m.value, m.fmt, m.digits, m.unit))}</div>
-        ${m.status ? statusBadge(m.status) : ''}${m.hint ? `<div class="h">${escapeHtml(m.hint)}</div>` : ''}</div>`));
+        ${m.status ? statusBadge(m.status, m.badge || BADGE_LABEL[m.status]) : ''}${m.hint ? `<div class="h">${escapeHtml(m.hint)}</div>` : ''}</div>`));
     }
     root.appendChild(grid);
   }

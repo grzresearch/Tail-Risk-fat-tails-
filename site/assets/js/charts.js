@@ -186,10 +186,14 @@ function scatter3dFigure(spec, t) {
 }
 
 function heatmapFigure(spec, t) {
-  const data = [{ type: 'heatmap', x: spec.xs, y: spec.ys, z: spec.zs, colorscale: riskScale(t, spec.scale), xgap: 2, ygap: 2,
+  const gap = spec.gap ?? 2;
+  const data = [{ type: 'heatmap', x: spec.xs, y: spec.ys, z: spec.zs, colorscale: riskScale(t, spec.scale), xgap: gap, ygap: gap,
+    zmin: spec.z.range ? spec.z.range[0] : undefined, zmax: spec.z.range ? spec.z.range[1] : undefined,
     colorbar: { thickness: 12, tickfont: { color: t.muted, size: 11 }, tickformat: tickformat(spec.z), outlinewidth: 0 },
     hovertemplate: `%{y} · %{x}<br>${escapeHtml(spec.z.label || 'Wert')}: %{z:${hoverFmt(spec.z)}}<extra></extra>`,
-    zmid: spec.scale === 'diverging' ? 0 : undefined }];
+    zmid: spec.scale === 'diverging' ? 0 : undefined,
+    texttemplate: spec.annotate ? `%{z:${spec.z.fmt === 'pct' ? `.${spec.z.digits ?? 1}%` : `.${spec.z.digits ?? 2}f`}}` : undefined,
+    textfont: spec.annotate ? { size: 12 } : undefined }];
   const layout = baseLayout(spec, t);
   layout.xaxis = axisLayout(spec.x, t, { showgrid: false, showline: false });
   layout.yaxis = axisLayout(spec.y, t, { showgrid: false, showline: false, autorange: 'reversed' });
@@ -204,7 +208,7 @@ function gaugeFigure(spec, t) {
     number: { font: { size: 44, color: t.ink }, valueformat: '.0f', suffix: ` / ${spec.max}` },
     gauge: { axis: { range: [0, spec.max], tickcolor: t.axis, tickfont: { color: t.muted } }, bar: { color: t.ink, thickness: 0.22 }, bgcolor: 'rgba(0,0,0,0)', borderwidth: 0, steps } }];
   const layout = baseLayout({ height: 250 }, t);
-  layout.margin = { l: 24, r: 24, t: 10, b: 0 };
+  layout.margin = { l: 36, r: 40, t: 10, b: 0 };
   return { data, layout };
 }
 
