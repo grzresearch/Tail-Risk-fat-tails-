@@ -90,7 +90,7 @@ function setNav(active) {
 async function route() {
   const { parts, query } = parseHash();
   const [first, second] = parts;
-  if (app.run && !(first === 'tool' && second === app.run.toolId)) app.run.detach = true;
+  if (app.run && !app.run.done) app.run.detach = true; // keeps running; result is cached for re-entry
   window.scrollTo({ top: 0 });
   if (!first) { setNav('home'); return renderHome(); }
   if (first === 'werkzeuge') { setNav('tools'); return renderCatalogue(); }
@@ -115,11 +115,47 @@ function toolCard(t) {
 }
 
 function catalogueHtml() {
-  return app.catalogue.groups.map((g) => {
+  const groups = app.catalogue.groups.map((g) => {
     const tools = app.catalogue.tools.filter((t) => t.group === g.id);
     if (!tools.length) return '';
-    return `<div class="group-title">${icon(g.id, 'width="15" height="15"')} ${escapeHtml(g.title)}</div><div class="tool-grid">${tools.map(toolCard).join('')}</div>`;
+    return `<div class="tool-group" data-group="${g.id}"><div class="group-title">${icon(g.id, 'width="15" height="15"')} ${escapeHtml(g.title)}</div><div class="tool-grid">${tools.map(toolCard).join('')}</div></div>`;
   }).join('');
+  return `<div class="catalogue-bar">
+      <label class="search">${icon('search')}<input type="search" placeholder="Werkzeug suchen – z. B. VaR, Lévy, VIX, Excel …" aria-label="Werkzeuge durchsuchen"></label>
+      <div class="seg" role="tablist" aria-label="Filter">
+        <button type="button" data-f="all" aria-selected="true">Alle</button>
+        <button type="button" data-f="data" aria-selected="false">Nutzt deine Daten</button>
+        <button type="button" data-f="sim" aria-selected="false">Simulationen</button>
+      </div></div>${groups}<p class="empty" data-slot="none" hidden>Kein Werkzeug passt zu dieser Suche.</p>`;
+}
+
+function wireCatalogue(root) {
+  const input = root.querySelector('.catalogue-bar input');
+  if (!input) return;
+  let filter = 'all';
+  const norm = (s) => s.toLowerCase().normalize('NFKD').replace(/[\u0300-\u036f]/g, '');
+  const index = new Map(app.catalogue.tools.map((t) => [t.id, norm([t.title, t.summary, t.description || '', t.covers.join(' '), groupTitle(t.group)].join(' '))]));
+  const apply = () => {
+    const words = norm(input.value).split(/\s+/).filter(Boolean);
+    let shown = 0;
+    root.querySelectorAll('.tool-group').forEach((g) => {
+      let any = false;
+      g.querySelectorAll('.tool-card').forEach((c) => {
+        const t = app.catalogue.tools.find((x) => x.id === c.dataset.tool);
+        const okF = filter === 'all' || (filter === 'data' ? t.needs.length > 0 : t.needs.length === 0);
+        const okW = words.every((w) => index.get(t.id).includes(w));
+        c.hidden = !(okF && okW); any ||= !c.hidden; shown += !c.hidden;
+      });
+      g.hidden = !any;
+    });
+    root.querySelector('[data-slot="none"]').hidden = shown > 0;
+  };
+  input.addEventListener('input', apply);
+  root.querySelectorAll('.catalogue-bar [data-f]').forEach((b) => b.addEventListener('click', () => {
+    filter = b.dataset.f;
+    root.querySelectorAll('.catalogue-bar [data-f]').forEach((x) => x.setAttribute('aria-selected', String(x === b)));
+    apply();
+  }));
 }
 
 function prewarmOnIntent(root) {
@@ -205,6 +241,7 @@ async function renderHome() {
   heroRefresh = () => { if (plot.isConnected) plot.innerHTML = heroChart(pulse); };
   heroRefresh();
   wireGallery(view);
+  wireCatalogue(view);
   prewarmOnIntent(view);
 }
 
@@ -213,7 +250,9 @@ function renderCatalogue() {
     <div class="section-head"><div><h1 style="font-size:clamp(26px,3vw,36px);letter-spacing:-.03em">Werkzeuge</h1>
     <p>Jedes Werkzeug ruft den originalen Python-Code des Frameworks auf. Werkzeuge mit „nutzt deine Daten“ rechnen auf dem gewählten Datensatz, Simulationen erzeugen ihre eigenen Pfade.</p></div></div>
     ${catalogueHtml()}</section>`;
+  wireCatalogue(view);
   prewarmOnIntent(view);
+  view.querySelector('.catalogue-bar input')?.focus({ preventScroll: true });
 }
 
 // --------------------------------------------------------------------------- gallery & method
@@ -389,7 +428,8 @@ function openDatasetDialog() {
 function importTab(body, mode, setPending) {
   let table = null, fileName = mode === 'paste' ? 'Eingefügte Daten' : null, sheets = null;
   body.innerHTML = `${mode === 'file'
-    ? `<label class="dropzone" tabindex="0">${icon('upload')}<div><b>Excel- oder CSV-Datei hierher ziehen</b> oder klicken zum Auswählen</div><div class="help">.xlsx, .xls, .ods, .csv, .txt – z. B. ein Kursexport aus deinem Banksystem</div><input type="file" accept=".xlsx,.xlsm,.xls,.ods,.csv,.txt,.tsv" hidden></label>`
+    ? `<label class="dropzone" tabindex="0">${icon('upload')}<div><b>Excel- oder CSV-Datei hierher ziehen</b> oder klicken zum Auswählen</div><div class="help">.xlsx, .xls, .ods, .csv, .txt – z. B. ein Kursexport aus deinem Banksystem</div><input type="file" accept=".xlsx,.xlsm,.xls,.ods,.csv,.txt,.tsv" hidden></label>
+      <p class="help" style="margin:0">Unsicher beim Format? <button type="button" class="btn ghost sm" data-act="sample">${icon('download')} Beispieldatei (.xlsx) herunterladen</button></p>`
     : `<label class="field"><span class="lbl"><b>In Excel Spalten markieren (z. B. Datum und Schlusskurs), kopieren und hier einfügen</b></span><textarea placeholder="Datum&#9;Schlusskurs&#10;02.01.2025&#9;5.868,55&#10;03.01.2025&#9;5.942,47&#10;…"></textarea></label>`}
     <div data-slot="sheet"></div><div data-slot="map"></div>
     <p class="privacy">${icon('shield')}<span>Deine Daten werden nur hier im Browser verarbeitet und nicht hochgeladen. Deutsche Zahlenformate (1.234,56), absteigende Sortierung und Datumsformate wie 31.12.2024 werden automatisch erkannt.</span></p>`;
@@ -431,6 +471,11 @@ function importTab(body, mode, setPending) {
     sheetSlot.querySelector('select')?.addEventListener('change', (e) => useSheet(sheets[Number(e.target.value)].rows));
     useSheet(sheets[0].rows);
   };
+  body.querySelector('[data-act="sample"]')?.addEventListener('click', async (e) => {
+    const btn = e.currentTarget; // currentTarget is null after the first await
+    btn.disabled = true;
+    try { await downloadSample(); } catch (err) { toast(err.message); } finally { btn.disabled = false; }
+  });
   if (mode === 'file') {
     const dz = body.querySelector('.dropzone'), input = dz.querySelector('input');
     const take = async (file) => {
@@ -448,6 +493,28 @@ function importTab(body, mode, setPending) {
     let timer;
     ta.addEventListener('input', () => { clearTimeout(timer); timer = setTimeout(() => { const rows = D.parseDelimited(ta.value); if (rows.length > 1) useSheet(rows); }, 250); });
   }
+}
+
+async function downloadSample() {
+  // A realistic template: what a price export from a bank system typically looks like (newest first).
+  const XLSX = await D.loadSheetJS();
+  const sp = app.market.datasets.find((d) => d.id === 'sp500');
+  const n = sp.dates.length, from = Math.max(0, n - 504);
+  const rows = [['Datum', 'Schlusskurs', 'VIX']];
+  for (let i = n - 1; i >= from; i--) {
+    const [y, m, d] = sp.dates[i].split('-').map(Number);
+    rows.push([new Date(y, m - 1, d), sp.prices[i], sp.vix?.[i] ?? null]);
+  }
+  const ws = XLSX.utils.aoa_to_sheet(rows, { cellDates: true });
+  for (let r = 1; r < rows.length; r++) {
+    const a = ws[XLSX.utils.encode_cell({ r, c: 0 })]; if (a) a.z = 'dd.mm.yyyy';
+    const b = ws[XLSX.utils.encode_cell({ r, c: 1 })]; if (b) b.z = '#,##0.00';
+    const c = ws[XLSX.utils.encode_cell({ r, c: 2 })]; if (c) c.z = '0.00';
+  }
+  ws['!cols'] = [{ wch: 12 }, { wch: 14 }, { wch: 8 }];
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, 'Kurse');
+  XLSX.writeFile(wb, 'tail-risk-beispiel-sp500.xlsx');
 }
 
 // --------------------------------------------------------------------------- tool view
@@ -469,8 +536,27 @@ function bootCard() {
   return card;
 }
 
-function progressCard(text) {
-  return h(`<section class="card boot-card" aria-live="polite"><h3 data-slot="t">${escapeHtml(text)}</h3><div class="progress indet"><i></i></div></section>`);
+function progressCard(text, { console: withConsole = false } = {}) {
+  const card = h(`<section class="card boot-card" aria-live="polite"><h3 data-slot="t">${escapeHtml(text)}</h3><div class="progress indet"><i></i></div>
+    <p class="small muted" data-slot="clock" style="margin:0"></p>${withConsole ? '<div class="console" data-slot="log" hidden></div>' : ''}</section>`);
+  const t0 = performance.now(), clock = card.querySelector('[data-slot="clock"]');
+  const timer = setInterval(() => {
+    if (!card.isConnected) return clearInterval(timer);
+    const s = Math.round((performance.now() - t0) / 1000);
+    clock.textContent = s >= 3 ? `Läuft seit ${s} s im Browser …` : '';
+  }, 1000);
+  card.log = (m) => {
+    const log = card.querySelector('[data-slot="log"]');
+    if (!log) return;
+    log.hidden = false;
+    const line = document.createElement('div');
+    line.textContent = m.text;
+    if (m.stream === 'stderr') line.className = 'err';
+    log.appendChild(line);
+    if (log.childElementCount > 400) log.firstElementChild.remove();
+    log.scrollTop = log.scrollHeight;
+  };
+  return card;
 }
 
 async function renderTool(id, query, { autorun } = {}) {
@@ -502,7 +588,7 @@ async function renderTool(id, query, { autorun } = {}) {
     if (app.dataset.shareable && spec.needs.length) q.set('ds', D.encodeChoice(app.choice));
     history.replaceState(null, '', toolHref(id, q));
     markDirty();
-    if (commit && spec.cost === 'fast') { clearTimeout(liveTimer); liveTimer = setTimeout(run, 350); }
+    if (commit && spec.cost === 'fast') { clearTimeout(liveTimer); liveTimer = setTimeout(() => run(), 350); }
   });
   let liveTimer;
   if (spec.params.length) paramsCard.appendChild(form); else paramsCard.appendChild(h('<p class="muted small" style="margin:0">Keine Parameter – einfach berechnen.</p>'));
@@ -519,12 +605,19 @@ async function renderTool(id, query, { autorun } = {}) {
 
   const resultKey = () => JSON.stringify([id, spec.needs.length ? app.dataset.key : '-', values]);
 
-  const run = async () => {
+  // toggle: the button (reads "Abbrechen" while this tool runs) cancels; otherwise a new run replaces the old.
+  const run = async ({ toggle = false } = {}) => {
     if (app.run && !app.run.done) {
-      if (app.run.toolId === id) { engine.cancel(); return; }
-      engine.cancel();
+      if (toggle && app.run.toolId === id) { engine.cancel(); return; }
+      if (app.run.toolId === id && spec.cost === 'fast' && !app.run.detach) {
+        app.run.rerun = true;         // fast tool: let it finish, then recompute with the latest values
+        return;
+      }
+      engine.cancel();                // a cancel reboots Python, only worth it for long runs
     }
-    const job = { toolId: id, done: false, stdout: [] };
+    const job = { toolId: id, key: resultKey(), done: false, stdout: [], detach: false };
+    let finish;
+    job.promise = new Promise((r) => { finish = r; });
     app.run = job;
     runBtn.innerHTML = `${icon('stop')} Abbrechen`;
     results.classList.add('stale');
@@ -543,32 +636,34 @@ async function renderTool(id, query, { autorun } = {}) {
         }
         fillDatasetStats(dsCard, app.datasetSummary);
       }
-      const prog = progressCard(`${spec.title} wird berechnet …`);
+      const prog = progressCard(`${spec.title} wird berechnet …`, { console: spec.group === 'scripts' });
       showWaiting(prog);
       const t0 = performance.now();
       const res = await engine.run(id, values, {
         preload: spec.preload,
         onProgress: (m) => { prog.querySelector('[data-slot="t"]').textContent = m.text; if (m.pct != null) { const bar = prog.querySelector('.progress'); bar.classList.remove('indet'); bar.firstElementChild.style.width = `${m.pct}%`; } },
-        onStdout: (m) => job.stdout.push(m),
+        onStdout: (m) => { job.stdout.push(m); prog.log(m); },
       });
       res.wall = (performance.now() - t0) / 1000;
+      if (res.ok) app.results.set(id, { key: job.key, result: res, stdout: job.stdout });
       if (job.detach) return;
       waiting?.remove();
       if (!res.ok) throw Object.assign(new Error(res.error), res);
-      app.results.set(id, { key: resultKey(), result: res, stdout: job.stdout });
       showResult(res, job.stdout);
     } catch (err) {
       if (job.detach) return;
       waiting?.dispose?.(); waiting?.remove();
       results.classList.remove('stale');
       if (err instanceof CancelledError) { toast('Berechnung abgebrochen.'); if (!results.children.length) results.appendChild(h('<div class="empty">Abgebrochen. Klicke auf „Berechnen“, um neu zu starten.</div>')); }
-      else renderError(results, { error: err.message, traceback: err.traceback, kind: err.kind }, { onRetry: run });
+      else renderError(results, { error: err.message, traceback: err.traceback, kind: err.kind }, { onRetry: () => run() });
     } finally {
       job.done = true;
+      finish();
       if (!job.detach) markDirty();
+      if (job.rerun && !job.detach) run();
     }
   };
-  runBtn.addEventListener('click', run);
+  runBtn.addEventListener('click', () => run({ toggle: true }));
 
   const showResult = (res, stdout) => {
     results.classList.remove('stale');
@@ -577,9 +672,10 @@ async function renderTool(id, query, { autorun } = {}) {
     const bar = h(`<div class="result-bar"><div class="meta">${icon('cpu', 'width="13" height="13" style="vertical-align:-2px"')} In ${fmt(res.seconds, 'num', 2)} s im Browser berechnet · ${escapeHtml(res.dataset?.name && spec.needs.length ? res.dataset.name : 'Simulation')}${res.dataset?.n && spec.needs.length ? ` · ${fmt(res.dataset.n, 'int')} Renditen` : ''}</div>
       <div class="actions"><button class="btn sm" data-act="xlsx">${icon('excel')} Excel</button><button class="btn sm" data-act="share">${icon('link')} Link</button><button class="btn sm" data-act="print">${icon('print')} Drucken / PDF</button></div></div>`);
     bar.querySelector('[data-act="xlsx"]').addEventListener('click', async (e) => {
-      e.currentTarget.disabled = true;
+      const btn = e.currentTarget; // currentTarget is null after the first await
+      btn.disabled = true;
       try { await exportXlsx({ spec, result: res, dataset: spec.needs.length ? app.dataset : { label: 'Simulation', detail: '' }, params: values }); }
-      catch (err) { toast(err.message); } finally { e.currentTarget.disabled = false; }
+      catch (err) { toast(err.message); } finally { btn.disabled = false; }
     });
     bar.querySelector('[data-act="share"]').addEventListener('click', async () => {
       const url = location.href;
@@ -598,11 +694,24 @@ async function renderTool(id, query, { autorun } = {}) {
   };
 
   const cached = app.results.get(id);
-  if (cached && cached.key === resultKey()) { showResult(cached.result, cached.stdout); }
-  else if (app.run && !app.run.done && app.run.toolId === id) { app.run.detach = true; run(); }
-  else if (autorun !== false) { run(); }
+  const pending = app.run && !app.run.done && app.run.toolId === id && app.run.key === resultKey() ? app.run : null;
+  if (cached && cached.key === resultKey()) showResult(cached.result, cached.stdout);
+  else if (pending) {
+    // came back while this exact computation is still running: wait for it instead of restarting
+    const card = progressCard(`${spec.title} wird berechnet …`, { console: spec.group === 'scripts' });
+    pending.stdout.forEach((m) => card.log(m));
+    results.appendChild(card);
+    runBtn.innerHTML = `${icon('stop')} Abbrechen`;
+    pending.promise.then(() => {
+      if (!card.isConnected) return;
+      const done = app.results.get(id);
+      if (done && done.key === resultKey()) showResult(done.result, done.stdout); else card.remove();
+      markDirty();
+    });
+    pending.detach = true; // its own closure renders into the old DOM; this view takes over
+    return;
+  } else if (autorun !== false) run();
   markDirty();
-  if (app.run && !app.run.done && app.run.toolId === id) runBtn.innerHTML = `${icon('stop')} Abbrechen`;
 }
 
 // --------------------------------------------------------------------------- boot
