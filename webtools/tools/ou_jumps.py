@@ -6,6 +6,7 @@ from scipy import stats
 from src.physics.ornstein_uhlenbeck import OUWithJumps
 
 from .. import charts as C
+from ..core import ToolError
 
 SPEC = {
     "id": "ou-jumps",
@@ -68,6 +69,7 @@ SPEC = {
 }
 
 LEVELS = [0.9, 0.95, 0.975, 0.99, 0.995, 0.999]
+MAX_PATH_STEPS = 300_000  # paths x steps: OUWithJumps.simulate draws the jumps path by path in Python
 N_EXAMPLES = 3
 
 
@@ -95,6 +97,10 @@ def run(params, data, out):
     plain = OUWithJumps(jump_intensity=0.0, **kw)
     h = params["horizon_days"] / 252
     conf, n_sim, seed = params["confidence"], params["n_simulations"], params["seed"]
+    path_steps = int(round(params["path_years"] * 252))
+    if path_steps * params["n_paths"] > MAX_PATH_STEPS:
+        raise ToolError(f"{params['n_paths']} Pfade × {path_steps} Tage sind zu viel für den Browser (Grenze "
+                        f"{MAX_PATH_STEPS // 1000}.000 Pfad-Tage). Verringere die Pfadlänge oder die Anzahl der Pfade.")
 
     # VaR / ES from the framework (same seed -> the same sample for both, and common random numbers)
     var_j = model.compute_var(0.0, h, conf, n_sim, seed=seed)
@@ -125,8 +131,7 @@ def run(params, data, out):
               note=f"{n_sim} Monte-Carlo-Szenarien über {hz}, Start auf dem Mittel (x₀ = μ = 0).")
 
     # Example paths with jump markers
-    sim = model.simulate(0.0, params["path_years"], n_steps=int(round(params["path_years"] * 252)),
-                         n_paths=params["n_paths"], seed=seed + 1)
+    sim = model.simulate(0.0, params["path_years"], n_steps=path_steps, n_paths=params["n_paths"], seed=seed + 1)
     paths, times = sim["paths"], sim["times"]
     dt = times[1] - times[0]
     traces = []
@@ -153,13 +158,16 @@ def run(params, data, out):
     c0, h0 = C.histogram(change_0, bins=80, range=(lo, hi))
     positive = np.concatenate([hj[hj > 0], h0[h0 > 0]])
     floor = float(positive.min()) / 3 if len(positive) else 1e-3
+    top = float(max(hj.max(), h0.max())) * 3
     out.chart(C.xy(
         f"Änderung über {hz}: mit vs. ohne Sprünge",
         [C.trace("mit Sprüngen", cj, np.where(hj > 0, hj, np.nan), type="bar", color=1),
-         C.trace("ohne Sprünge", c0, np.where(h0 > 0, h0, np.nan), color="muted", width=2)],
-        x=C.axis("Änderung von x", fmt="pct", digits=1),
-        y=C.axis("Dichte (log)", type="log", range=(floor, float(max(hj.max(), h0.max())) * 3)),
-        vlines=[C.vline(-var_j, "VaR mit Sprüngen", color="critical"), C.vline(-var_0, "VaR ohne", color="muted")],
+         C.trace("ohne Sprünge", c0, np.where(h0 > 0, h0, np.nan), color="muted", width=2),
+         C.trace(f"−VaR mit Sprüngen ({_de(100 * var_j)} %)", [-var_j] * 2, [floor, top], color="critical",
+                 dash=True, width=1.5, decimate_to=None),
+         C.trace(f"−VaR ohne ({_de(100 * var_0)} %)", [-var_0] * 2, [floor, top], color="muted", dash=True,
+                 width=1.5, decimate_to=None)],
+        x=C.axis("Änderung von x", fmt="pct", digits=1), y=C.axis("Dichte (log)", type="log", range=(floor, top)),
         height=340, subtitle="Logarithmisch aufgetragen: Die Sprünge heben den Rand an, die Mitte bleibt fast gleich.",
     ))
 
