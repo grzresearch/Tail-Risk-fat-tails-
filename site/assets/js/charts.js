@@ -40,7 +40,7 @@ function tokens() {
   const cs = getComputedStyle(document.documentElement);
   const v = (n) => cs.getPropertyValue(n).trim();
   return {
-    surface: v('--surface'), ink: v('--ink'), ink2: v('--ink-2'), muted: v('--muted'), grid: v('--grid'), axis: v('--axis'),
+    surface: v('--surface'), surface2: v('--surface-2'), ink: v('--ink'), ink2: v('--ink-2'), muted: v('--muted'), grid: v('--grid'), axis: v('--axis'),
     series: [1, 2, 3, 4, 5, 6, 7, 8].map((i) => v(`--s${i}`)),
     status: { good: v('--good'), warning: v('--warning'), serious: v('--serious'), critical: v('--critical') },
     swan: v('--swan'), font: v('--font') || 'system-ui',
@@ -144,7 +144,7 @@ function xyFigure(spec, t) {
   layout.showlegend = data.length > 1;
   const shapes = [], annotations = [];
   for (const b of spec.bands || []) {
-    shapes.push({ type: 'rect', xref: 'x', yref: 'paper', x0: b.x0, x1: b.x1, y0: 0, y1: 1, fillcolor: withAlpha(color(b.color, t), 0.10), line: { width: 0 }, layer: 'below' });
+    shapes.push({ type: 'rect', xref: 'x', yref: 'paper', x0: b.x0, x1: b.x1, y0: 0, y1: 1, fillcolor: withAlpha(color(b.color, t), 0.18), line: { width: 0 }, layer: 'below' });
     if (b.label) annotations.push({ x: b.x0, xref: 'x', y: 1, yref: 'paper', text: escapeHtml(b.label), showarrow: false, xanchor: 'left', yanchor: 'top', font: { size: 11, color: t.ink2 }, bgcolor: withAlpha(t.surface.length === 7 ? t.surface : '#ffffff', 0.7) });
   }
   // labels of nearby reference lines alternate between the right and the left edge so they never overlap
@@ -169,15 +169,19 @@ function xyFigure(spec, t) {
 }
 
 function riskScale(t, scale) {
-  if (scale === 'diverging') return [[0, t.series[0]], [0.5, '#9a9993'], [1, t.status.critical]];
+  if (scale === 'diverging') return [[0, t.series[0]], [0.5, t.surface2 || '#f0efec'], [1, t.status.critical]];
   if (scale === 'sequential') return [[0, '#cde2fb'], [0.5, '#3987e5'], [1, '#0d366b']];
   // calm plateau -> stress ramp -> crash cliff -> black swan
   return [[0, t.status.good], [0.3, t.status.warning], [0.55, t.status.serious], [0.8, t.status.critical], [1, t.swan]];
 }
 
 function scene(spec, t) {
-  const ax = (a) => ({ ...axisLayout(a, t), backgroundcolor: 'rgba(0,0,0,0)', showbackground: false, title: { text: a.label || '', font: { size: 12, color: t.ink2 } } });
-  return { xaxis: ax(spec.x), yaxis: ax(spec.y), zaxis: ax(spec.z), camera: { eye: { x: 1.55, y: -1.55, z: 0.95 } }, aspectmode: 'manual', aspectratio: { x: 1.2, y: 1.2, z: 0.75 } };
+  const ax = (a) => ({ ...axisLayout(a, t), backgroundcolor: 'rgba(0,0,0,0)', showbackground: false, ticks: 'outside', ticklen: 8, tickcolor: 'rgba(0,0,0,0)',
+    title: { text: a.label || '', font: { size: 12, color: t.ink2 } } });
+  // elevated three-quarter view: shows the shape of a surface, not just its side wall
+  const camera = spec.camera || { eye: { x: 1.55, y: -1.55, z: 1.25 }, center: { x: 0, y: 0, z: -0.12 } };
+  return { xaxis: ax(spec.x), yaxis: ax(spec.y), zaxis: ax(spec.z), camera,
+    domain: { x: [0, 1], y: [0, 1] }, aspectmode: 'manual', aspectratio: { x: 1.2, y: 1.2, z: 0.75 } };
 }
 
 function surfaceFigure(spec, t) {
@@ -190,23 +194,22 @@ function surfaceFigure(spec, t) {
   }];
   for (const p of [...(spec.paths || []), ...(spec.points || [])]) {
     const c = color(p.color, t);
-    data.push({ type: 'scatter3d', name: p.name, x: p.x, y: p.y, z: p.z, text: p.text || undefined,
+    data.push({ type: 'scatter3d', name: p.name, x: p.x, y: p.y, z: p.z, text: p.text || undefined, opacity: p.opacity ?? 1,
       mode: p.mode === 'markers' ? 'markers' : p.mode === 'lines+markers' ? 'lines+markers' : 'lines',
-      line: { color: c, width: 6 }, marker: { color: c, size: p.size || 5, line: { color: t.surface, width: 1 } } });
+      line: { color: c, width: p.width || 6 }, marker: { color: c, size: p.size || 5, line: { color: t.surface, width: 1 } } });
   }
   const layout = baseLayout(spec, t);
   layout.scene = scene(spec, t);
   layout.margin = { l: 0, r: 0, t: 0, b: 0 };
   layout.showlegend = data.length > 1;
-  layout.legend = { ...layout.legend, y: 0, yanchor: 'bottom' };
   return { data, layout };
 }
 
 function scatter3dFigure(spec, t) {
   const data = spec.traces.map((p) => {
     const c = color(p.color, t);
-    return { type: 'scatter3d', name: p.name, x: p.x, y: p.y, z: p.z, text: p.text || undefined,
-      mode: p.mode || 'lines', line: { color: c, width: 3 }, marker: { color: c, size: p.size || 3 } };
+    return { type: 'scatter3d', name: p.name, x: p.x, y: p.y, z: p.z, text: p.text || undefined, opacity: p.opacity ?? 1,
+      mode: p.mode || 'lines', line: { color: c, width: p.width || 3 }, marker: { color: c, size: p.size || 3 } };
   });
   const layout = baseLayout(spec, t);
   layout.scene = scene(spec, t);

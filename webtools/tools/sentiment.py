@@ -13,8 +13,8 @@ SPEC = {
     "title": "VIX-Sentiment: Angst, Spikes, Umkehr",
     "group": "warning",
     "order": 30,
-    "summary": "Wie viel Angst steckt im VIX? Regime, Perzentil, Spikes und Mean-Reversion-Signal über die Zeit – "
-               "und was danach mit den Kursen geschah.",
+    "summary": "Wie viel Angst im VIX steckt – Regime, Perzentil, Spikes und Mean-Reversion-Signal über "
+               "die Zeit, und was danach mit den Kursen geschah.",
     "description": (
         "Der VIX misst die für 30 Tage erwartete Schwankung des S&P 500 aus Optionspreisen – das bekannteste "
         "Angstbarometer. Der `VIXAnalyzer` des Frameworks ordnet ihn in Regime ein (unter 15 sorglos, bis 25 "
@@ -22,10 +22,11 @@ SPEC = {
         "erkennt **Spikes** (Tagesanstieg größer als die Schwelle × übliche Tagesschwankung der letzten 19 "
         "Tage) und gibt ein **Mean-Reversion-Signal**: Ein z-Wert über 2 deutet auf eine nahe Umkehr der "
         "Angst, unter −1,5 auf Sorglosigkeit.\n\n"
-        "Jeder Tageswert nutzt nur den VIX bis zu diesem Tag. Die Tabellen prüfen, was in den 20 "
-        "Handelstagen nach einem Regime oder Spike mit den Kursen geschah. Der 3D-Phasenraum "
-        "(`compute_sentiment_coordinates`) zeigt VIX-Niveau, VIX-Momentum und die Korrelation zwischen "
-        "Renditen und VIX-Änderungen, jeweils auf 0–1 normiert.\n\n"
+        "Regime, Spikes und Mean-Reversion-Signal nutzen an jedem Tag nur den VIX bis zu diesem Tag. Die "
+        "Tabellen prüfen, was in den 20 Handelstagen nach einem Regime oder Spike mit den Kursen geschah. Der "
+        "3D-Phasenraum (`compute_sentiment_coordinates`) zeigt VIX-Niveau, VIX-Momentum und die Korrelation "
+        "zwischen Renditen und VIX-Änderungen, jeweils mit Minimum und Maximum der ganzen Reihe auf 0–1 "
+        "normiert.\n\n"
         "Enthält der Datensatz keinen VIX, leitet das Framework einen aus den Renditen ab "
         "(`generate_vix_from_returns`) – dann sind die Werte illustrativ, und es gibt keine Einschätzung."
     ),
@@ -75,8 +76,11 @@ def run(params, data, out):
     n = data.n
     x, xa = index_axis(data)
     label = (lambda i: _date_de(x[i])) if data.dates else (lambda i: f"Tag {i}")
-    real = data.vix is not None
-    vix = np.asarray(data.vix, dtype=float) if real else np.asarray(generate_vix_from_returns(r), dtype=float)
+    # synthetic and crisis datasets carry a VIX that data.py derived from the returns (generate_vix_from_returns)
+    derived = data.meta.get("source") in ("synthetic", "crisis")
+    real = data.vix is not None and not derived
+    vix = (np.asarray(data.vix, dtype=float) if data.vix is not None
+           else np.asarray(generate_vix_from_returns(r), dtype=float))
 
     an = VIXAnalyzer()
     an.add_data(vix)
@@ -128,9 +132,11 @@ def run(params, data, out):
                         f"VIX {vix[-1]:.1f} im Regime „{reg_de}“, {pct:.0f}. Perzentil des letzten Fensters; "
                         f"Mean-Reversion: {SIGNAL.get(mr['signal'], mr['signal'])}.".replace(".", ",", 1))
     else:
-        out.note("Der Datensatz enthält keinen VIX. Das Framework leitet ihn aus der realisierten Volatilität ab "
-                 "(`generate_vix_from_returns`, Niveau 15 + 100 × Jahresvola) – die Werte sind illustrativ und meist "
-                 "höher als der echte VIX.", "warning")
+        out.note(("Der VIX dieses synthetischen Datensatzes ist" if derived else
+                  "Der Datensatz enthält keinen VIX, deshalb wird er hier")
+                 + " aus der realisierten Volatilität abgeleitet (`generate_vix_from_returns`, Niveau 15 + 100 × "
+                 "Jahresvola). Die Werte sind illustrativ und meist höher als ein echter VIX – deshalb gibt es keine "
+                 "Einschätzung.", "warning")
 
     # ---- charts ---------------------------------------------------------------------------------------
     out.chart(C.xy(
@@ -168,8 +174,8 @@ def run(params, data, out):
     out.chart(C.scatter3d(
         "Sentiment-Phasenraum", traces,
         x=C.axis("VIX-Niveau (0–1)"), y=C.axis("VIX-Momentum (0–1)"), z=C.axis("Rendite-VIX-Korrelation (0–1)"),
-        subtitle=f"Letzte {len(idx)} Tage. Panik liegt rechts (hohes Niveau) und vorn (steigender VIX); "
-                 "kleine Korrelation = Renditen und VIX laufen gegeneinander.",
+        subtitle=f"Letzte {len(idx)} Tage, Farbe = VIX-Regime. Panik: hohes Niveau und steigender VIX. Kleine "
+                 "Korrelation = Renditen und VIX laufen gegeneinander (der Normalfall).",
     ))
 
     # ---- what happened next? ----------------------------------------------------------------------------
@@ -201,7 +207,7 @@ def run(params, data, out):
         top = spikes[np.argsort(z_spike[spikes])[::-1][:10]]
         srows = [[label(i), float(vix[i]), float(vix[i] - vix[i - 1]), float(z_spike[i]), float(r[i]),
                   float(fwd[i]) if np.isfinite(fwd[i]) else None] for i in sorted(top)]
-        out.table("Die zehn stärksten VIX-Spikes",
+        out.table(f"Die {len(top)} stärksten VIX-Spikes (chronologisch)",
                   ["Datum", "VIX", "Anstieg (Punkte)", "z", "Rendite am Tag", f"Rendite nächste {H} T"], srows,
                   formats=["text", "num", "num", "num", "pct", "pct"],
                   note="z = Anstieg ÷ Standardabweichung der VIX-Tagesänderungen der 19 Tage davor.")

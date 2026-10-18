@@ -31,8 +31,8 @@ SPEC = {
         "Rendite und VIX-Sprung). **Kritischer Punkt** verfolgt AC(1), Varianz und Schiefe auf dem Weg zu einem "
         "Kipppunkt. **Physik-Dashboard** zeigt Lévy-, Tsallis- und Phasenübergangsraum.\n\n"
         "In jeder Ansicht ist das interaktive Diagramm oben die Hauptdarstellung (ziehen = drehen, Mausrad = "
-        "zoomen); darunter folgt die Original-Grafik aus `src/visualization`. Die Parameter gelten jeweils nur für "
-        "die Ansicht, die im Hilfetext steht."
+        "zoomen); darunter folgt die Original-Grafik aus `src/visualization`. Unter der Ansicht erscheinen nur die "
+        "Parameter, die für sie gelten."
     ),
     "needs": ["returns"],
     "params": [
@@ -45,16 +45,17 @@ SPEC = {
         {"name": "last_n", "type": "int", "default": 2520, "min": 250, "max": 5000, "step": 250,
          "label": "Zeitraum (letzte Handelstage)", "unit": "Tage"},
         {"name": "max_horizon", "type": "int", "default": 20, "min": 2, "max": 250, "step": 1,
-         "label": "Längster Horizont", "unit": "Tage", "help": "Nur VaR-Fläche."},
+         "label": "Längster Horizont", "unit": "Tage", "show_if": {"view": ["var"]}},
         {"name": "threshold", "type": "float", "default": 5.0, "min": 2.0, "max": 15.0, "step": 0.5,
-         "label": "Crash-Schwelle (Tagesverlust)", "unit": "%", "help": "Nur Modellfläche."},
+         "label": "Crash-Schwelle (Tagesverlust)", "unit": "%", "show_if": {"view": ["model"]}},
         {"name": "partner", "type": "select", "default": "lag", "label": "Zweite Reihe",
-         "help": "Nur gemeinsame Ränder.",
+         "show_if": {"view": ["joint"]},
          "options": [{"value": "lag", "label": "Rendite am Vortag"}, {"value": "vix", "label": "VIX-Veränderung"}]},
         {"name": "ews_window", "type": "int", "default": 50, "min": 20, "max": 250, "step": 5,
-         "label": "Fenster für AC(1), Varianz, Schiefe", "unit": "Tage", "help": "Nur kritischer Punkt."},
+         "label": "Fenster für AC(1), Varianz, Schiefe", "unit": "Tage", "show_if": {"view": ["critical"]}},
         {"name": "ac_threshold", "type": "float", "default": 0.7, "min": 0.3, "max": 0.99, "step": 0.01,
-         "label": "AC(1)-Schwelle „nahe kritisch“", "help": "Nur kritischer Punkt. Original: 0,7."},
+         "label": "AC(1)-Schwelle „nahe kritisch“", "help": "Original: 0,7.",
+         "show_if": {"view": ["critical"]}},
     ],
     "covers": [
         "src.visualization.risk_surface_3d.TailRisk3DSurface",
@@ -230,6 +231,7 @@ def _model_view(params, data, out, r, k):
         points=[C.path3d("Heute", [np.clip(vol_now, vols[0], vols[-1])], [nu_now], [p_now + 0.012], color="ink",
                          mode="markers", size=8, text=[f"{_pct(p_now)}"])],
         scale="risk", height=560,
+        camera={"eye": {"x": 1.2, "y": 1.7, "z": 1.0}},   # same view as the README surface (same axes)
         subtitle="Gleiche Volatilität (Standardabweichung) auf der ganzen Fläche – ν verteilt sie nur anders: "
                  "kleines ν = seltener, aber heftiger.",
     ))
@@ -347,13 +349,18 @@ def _critical_view(params, data, out, r, k):
     x, xa = _x(data, k)
     idx = np.flatnonzero(np.isfinite(ac))
     var_pct_now = float(np.mean(var[idx] <= var[-1]))
-    out.metric("AC(1) heute", ac[-1], "num", digits=2, hint="des trendbereinigten Log-Kurses",
-               status="warning" if ac[-1] > thr else None)
+    ac_pct_now = float(np.mean(ac[idx] <= ac[-1]))
+    above_thr = float(np.mean(ac[idx] > thr))
+    crit_share = float(np.mean(crit[idx]))
+    # AC(1) of a detrended price is above 0.7 almost always - only a high value *relative to its history* is a signal
+    out.metric("AC(1) heute", ac[-1], "num", digits=2,
+               hint=f"des trendbereinigten Log-Kurses · Perzentil {_de(100 * ac_pct_now, 0)} %",
+               status="warning" if ac[-1] > thr and ac_pct_now >= 0.8 else None)
     out.metric("Varianz-Perzentil heute", var_pct_now, "pct", digits=0, hint="gegenüber dem gezeigten Zeitraum",
                status="warning" if var_pct_now > 0.8 else None)
     out.metric("Schiefe heute", skew[-1], "num", digits=2, hint=f"der Tagesrenditen über {w} Tage")
     out.metric("Tage „nahe kritisch“", int(crit.sum()), "int",
-               hint=f"AC(1) > {_de(thr)} und Varianz > 80. Perzentil · {_pct(crit.mean(), 1)} der Tage")
+               hint=f"AC(1) > {_de(thr)} und Varianz > 80. Perzentil · {_pct(crit_share, 1)} der Tage")
     if crit.any():
         last = x[int(np.flatnonzero(crit)[-1])]
         out.metric("Zuletzt nahe kritisch", _date_de(last) if isinstance(last, str) else f"Tag {last}", "text")
@@ -372,8 +379,8 @@ def _critical_view(params, data, out, r, k):
     out.chart(C.scatter3d(
         "Annäherung an den kritischen Punkt: AC(1) × Varianz × Schiefe", traces,
         x=C.axis("AC(1)"), y=C.axis("Varianz (trendbereinigt)"), z=C.axis("Schiefe"), height=560,
-        subtitle="Kritisches Verlangsamen: der Markt wandert nach hinten oben (AC(1) und Varianz steigen), die "
-                 "Schiefe kippt ins Negative.",
+        subtitle="Kritisches Verlangsamen: AC(1) und Varianz steigen gemeinsam, die Schiefe kippt ins Negative. "
+                 "Rot: Tage mit hoher AC(1) und Varianz im obersten Fünftel.",
     ))
     tr = [C.trace("AC(1)", x, ac, color=1, width=1.2)]
     if crit.any():
@@ -383,9 +390,12 @@ def _critical_view(params, data, out, r, k):
     out.chart(C.xy(f"AC(1) im Zeitverlauf ({w}-Tage-Fenster)", tr, x=xa, y=C.axis("AC(1)"),
                    hlines=[C.hline(thr, f"Schwelle {_de(thr)}", color="warning")],
                    subtitle="Rot: Tage, an denen zusätzlich die Varianz über ihrem 80. Perzentil liegt."))
+    mech = (f" Hier liegt sie an {_pct(above_thr, 0)} der Tage über {_de(thr)} – „nahe kritisch“ heißt damit "
+            "praktisch nur „Varianz im obersten Fünftel“, und das trifft per Definition 20 % der Tage."
+            if above_thr > 0.9 else "")
     out.note("Die AC(1) wird auf dem trendbereinigten Log-Kurs gemessen (wie im Werkzeug „Kritisches "
-             "Verlangsamen“); schon eine reine Irrfahrt hat dort hohe Werte. Aussagekräftig ist der gemeinsame "
-             "Anstieg von AC(1) und Varianz, nicht das Niveau allein.")
+             "Verlangsamen“); schon eine reine Irrfahrt hat dort hohe Werte." + mech + " Aussagekräftig ist der "
+             "gemeinsame Anstieg von AC(1) und Varianz, nicht das Niveau allein.")
     fig = CriticalPointVisualizer(figsize=(10, 8)).create_critical_surface(ac, var, skew, np.arange(k, dtype=float),
                                                                            ac_threshold=thr)
     _fig(out, fig, "Original: CriticalPointVisualizer.create_critical_surface")
@@ -409,7 +419,7 @@ def _physics_view(params, data, out, r, k):
     xs = x[warm:]
     out.metric("Composite heute", rv[-1], "num", digits=2, hint="(λ + 0,5·q + χ) / 2,5")
     out.metric("Perzentil heute", float(np.mean(rv <= rv[-1])), "pct", digits=0, hint="gegenüber dem Zeitraum")
-    out.metric("Lévy-Vola σ/σ̄ heute", levy[0][-1], "num", digits=2, hint="1 = durchschnittliche Volatilität")
+    out.metric("Lévy-Vola heute", levy[0][-1], "num", digits=2, hint="σ ÷ Ø σ · 1 = durchschnittliche Volatilität")
     out.metric("Tsallis-q heute", tsallis[0][-1], "num", digits=2, hint="1 = Gauß, größer = fettere Ränder")
 
     traces = []
@@ -423,7 +433,7 @@ def _physics_view(params, data, out, r, k):
     traces.append(C.path3d("heute", [levy[0][-1]], [tsallis[1][-1]], [rv[-1]], color="ink", mode="markers", size=7))
     out.chart(C.scatter3d(
         "Composite-Risiko im Raum aus Volatilität und Entropie", traces,
-        x=C.axis("Volatilität σ/σ̄ (Lévy)"), y=C.axis("Tsallis-Entropie S_q"), z=C.axis("Composite-Risiko"),
+        x=C.axis("Volatilität σ ÷ Ø σ (Lévy)"), y=C.axis("Tsallis-Entropie S_q"), z=C.axis("Composite-Risiko"),
         height=540,
         subtitle="Panel 4 des 3D-Dashboards, drehbar. Die Farbe ist das Composite-Perzentil (Median, 90 %).",
     ))

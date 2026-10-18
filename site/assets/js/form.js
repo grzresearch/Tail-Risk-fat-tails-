@@ -1,5 +1,6 @@
 // Parameter forms generated from a tool SPEC.
 import { escapeHtml } from './format.js';
+import { parseNumber } from './data.js';
 
 const dec = (step) => { const s = String(step ?? 1); return s.includes('.') ? s.split('.')[1].length : 0; };
 const show = (v, step) => Number(v).toLocaleString('de-DE', { minimumFractionDigits: dec(step), maximumFractionDigits: dec(step) });
@@ -34,28 +35,39 @@ export function buildForm(spec, values, onChange) {
       el.className = 'field';
       el.innerHTML = `<span class="lbl"><b>${escapeHtml(p.label)}</b><output for="${id}">${show(v, step)}${p.unit ? ' ' + escapeHtml(p.unit) : ''}</output></span>
         <div class="range-row"><input type="range" id="${id}" min="${p.min}" max="${p.max}" step="${step}" value="${v}">
-        <input type="number" min="${p.min}" max="${p.max}" step="${step}" value="${v}" aria-label="${escapeHtml(p.label)} (Zahl)"></div>
+        <input type="text" inputmode="decimal" class="num-box" value="${show(v, step)}" aria-label="${escapeHtml(p.label)} (Zahl)"></div>
         ${p.help ? `<span class="help">${escapeHtml(p.help)}</span>` : ''}`;
-      const range = el.querySelector('input[type=range]'), num = el.querySelector('input[type=number]'), out = el.querySelector('output');
+      const range = el.querySelector('input[type=range]'), num = el.querySelector('input.num-box'), out = el.querySelector('output');
       const set = (raw, commit) => {
-        let x = Number(raw);
-        if (!Number.isFinite(x)) return;
+        let x = typeof raw === 'number' ? raw : parseNumber(raw); // accepts 0,95 and 0.95
+        if (!Number.isFinite(x)) { num.value = show(state[p.name], step); return; }
         x = Math.min(p.max, Math.max(p.min, x));
         if (p.type === 'int') x = Math.round(x);
-        range.value = x; num.value = x; out.textContent = show(x, step) + (p.unit ? ' ' + p.unit : '');
+        range.value = x; num.value = show(x, step); out.textContent = show(x, step) + (p.unit ? ' ' + p.unit : '');
         emit(p.name, x, commit);
       };
-      range.addEventListener('input', () => set(range.value, false));
-      range.addEventListener('change', () => set(range.value, true));
+      range.addEventListener('input', () => set(Number(range.value), false));
+      range.addEventListener('change', () => set(Number(range.value), true));
       num.addEventListener('change', () => set(num.value, true));
+      num.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); set(num.value, true); } });
     } else {
       el = document.createElement('label');
       el.className = 'field';
       el.innerHTML = `<span class="lbl"><b>${escapeHtml(p.label)}</b></span><input type="text" id="${id}" value="${escapeHtml(String(v))}" maxlength="${p.maxlength || 200}">${p.help ? `<span class="help">${escapeHtml(p.help)}</span>` : ''}`;
       el.querySelector('input').addEventListener('change', (e) => emit(p.name, e.target.value, true));
     }
+    if (p.show_if) el.dataset.showIf = JSON.stringify(p.show_if);
     form.appendChild(el);
   }
+  // parameters that only matter for some settings (e.g. one view of a tool) are shown only then
+  const syncVisibility = () => {
+    form.querySelectorAll('[data-show-if]').forEach((el) => {
+      const cond = JSON.parse(el.dataset.showIf);
+      el.hidden = !Object.entries(cond).every(([k, vals]) => vals.map(String).includes(String(state[k])));
+    });
+  };
+  form.addEventListener('change', syncVisibility);
+  syncVisibility();
   form.values = () => ({ ...state });
   return form;
 }

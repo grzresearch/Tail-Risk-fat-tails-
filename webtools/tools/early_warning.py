@@ -33,7 +33,7 @@ SPEC = {
         "**Net Gamma Exposure** (35 %), **TailDex** (25 %), **VIX-Terminkurve** (20 %), **Dark Index** (10 %) "
         "und **Smart Money Flow** (10 %). Ab 50 gilt die Lage als erhöht, ab 75 als hoch, ab 90 als extrem.\n\n"
         "**Wichtig:** GEX, TailDex, DIX und SMFI beruhen auf proprietären Options- und Dark-Pool-Daten, die "
-        "hier nicht vorliegen. Das Framework *modelliert* sie aus deinen Renditen und dem VIX (`simulate_*`) – "
+        "hier nicht vorliegen. Das Framework **modelliert** sie aus deinen Renditen und dem VIX (`simulate_*`) – "
         "die Verläufe sind illustrativ, keine echten Messwerte. Echt ist die VIX-Kurve, wenn der Datensatz VIX "
         "und VIX3M enthält (S&P 500): Dann zählt das tatsächliche Verhältnis VIX/VIX3M (> 1 = invertiert = "
         "Stress), sonst simuliert das Framework eine Futures-Kurve aus dem VIX. Gerechnet wird kausal: Jeder "
@@ -160,8 +160,10 @@ def run(params, data, out):
                status="serious" if ratio[-1] > 1 else None)
     out.metric("Höchster Komposit", comp[i_max], "num", digits=0, unit="/ 100", status=LEVEL[_level_of(comp[i_max], th)][0],
                hint=f"am {label(i_max)}")
-    out.metric("Tage ≥ 50 (erhöht)", float(np.mean(comp >= th["elevated"])), "pct", digits=1)
-    out.metric("Tage ≥ 75 (hoch)", float(np.mean(comp >= th["high"])), "pct", digits=1)
+    out.metric("Anteil Tage ≥ 50", float(np.mean(comp >= th["elevated"])), "pct", digits=1,
+               hint="Stufe Erhöht oder höher")
+    out.metric("Anteil Tage ≥ 75", float(np.mean(comp >= th["high"])), "pct", digits=1,
+               hint="Stufe Hoch oder Extrem")
 
     out.note("**Modellierte Indikatoren:** GEX, TailDex, DIX und SMFI brauchen proprietäre Options- bzw. "
              "Dark-Pool-Daten. Das Framework modelliert sie hier aus Renditen und VIX – das sind illustrative "
@@ -174,7 +176,9 @@ def run(params, data, out):
         curve = "**VIX-Kurve modelliert:** Der Datensatz hat kein VIX3M, M1/M2 werden aus dem VIX simuliert."
     if not vix_real:
         curve += " Auch der VIX fehlt – er wird aus den Renditen abgeleitet (`generate_vix_from_returns`)."
-    out.note(curve + " Alle Werte sind kausal: Tag *t* nutzt nur Daten bis *t* (`causal=True`).", "info")
+    elif data.meta.get("source") in ("synthetic", "crisis"):
+        curve += " Der VIX dieses synthetischen Datensatzes ist selbst aus den Renditen abgeleitet."
+    out.note(curve + " Alle Werte sind kausal: Jeder Tag nutzt nur Daten bis zu diesem Tag (`causal=True`).", "info")
 
     # ---- gauge + contributions --------------------------------------------------------------------
     out.chart(C.gauge("Komposit am letzten Tag", float(comp[-1]), thresholds=(th["elevated"], th["high"], th["extreme"]),
@@ -188,7 +192,7 @@ def run(params, data, out):
          C.trace("Beitrag zum Komposit (Punkte)", cats, [last["components"][k]["contribution"] for k in KEYS],
                  type="bar", color=2)],
         x=C.axis("", type="category"), y=C.axis("Punkte", range=(0, 100)),
-        subtitle="Beitrag = Score × Gewicht (GEX 35 %, TDEX 25 %, VIX-Kurve 20 %, DIX und SMFI je 10 %).",
+        subtitle="Beitrag = Score × Gewicht (GEX 35\u00a0%, TDEX 25\u00a0%, VIX-Kurve 20\u00a0%, DIX und SMFI je 10\u00a0%).",
     ))
 
     # ---- composite + price with warning phases ----------------------------------------------------
@@ -201,14 +205,22 @@ def run(params, data, out):
         subtitle="Gestrichelte Linien = Stufengrenzen des Frameworks (50 / 75 / 90).",
     ))
     episodes = _episodes(comp >= th["high"])
-    shown = sorted(episodes, key=lambda e: comp[e[0]:e[1] + 1].max(), reverse=True)[:40]
+
+    def _segment(mask):
+        """Prices on the flagged days (plus the following day, so single days still draw a segment)."""
+        m = np.asarray(mask, dtype=bool)
+        m = m | np.concatenate([[False], m[:-1]])
+        return np.where(m, prices, np.nan)
+
+    flagged = [(f"Komposit ≥ {th['elevated']} (Erhöht)", comp >= th["elevated"], "warning", 2.0),
+               (f"Komposit ≥ {th['high']} (Hoch, Extrem)", comp >= th["high"], "serious", 2.4)]
     out.chart(C.xy(
-        "Kurs mit Warnphasen (Komposit ≥ 75)",
-        [C.trace("Kurs" if data.prices is not None else "Index aus Renditen (Start 100)", x, prices, color=1,
-                 width=1.2)],
+        "Kurs mit Warnphasen",
+        [C.trace("Kurs" if data.prices is not None else "Index aus Renditen (Start 100)", x, prices, color="muted",
+                 width=1.2)]
+        + [C.trace(name, x, _segment(m), color=col, width=wd) for name, m, col, wd in flagged if m.any()],
         x=xa, y=C.axis("Kurs", type="log" if prices.max() > 8 * prices.min() else "linear"),
-        bands=[C.band(x[a], x[min(b + 1, n - 1)], "", "serious") for a, b in shown],
-        subtitle="Rot hinterlegt: Tage mit hoher Warnstufe. Kamen sie vor oder während der Einbrüche?",
+        subtitle="Farbig: Tage mit Warnstufe. Kamen die Warnungen vor den Einbrüchen – oder erst währenddessen?",
     ))
 
     # ---- which indicator fired when ---------------------------------------------------------------
@@ -219,7 +231,7 @@ def run(params, data, out):
     out.chart(C.heatmap(
         "Welcher Indikator schlug wann an?", [x[a] for a in starts], rows, z,
         x=xa if data.dates else C.axis("Handelstag", fmt="int"), y=C.axis("", type="category"),
-        z=C.axis("Score"), scale="risk",
+        z=C.axis("Score", range=(0, 100)), scale="risk",
         subtitle=f"Mittlerer Score je {step} Handelstage (0 = ruhig, 100 = maximale Warnung).", height=400,
     ))
 
@@ -274,8 +286,10 @@ def run(params, data, out):
                        last["composite_score"], ""])
     out.table(f"Letzter Tag ({label(n - 1)}): die fünf Indikatoren",
               ["Indikator", "Wert", "Einordnung", "Score", "Gewicht", "Beitrag", "Datenbasis"], table_rows,
-              formats=["text", "text", "text", "num", "pct", "num", "text"],
-              note="Einordnung nach den Snapshot-Regeln des Frameworks (calculate_*). Score und Beitrag in Punkten (0–100).")
+              formats=["text", "text", "text", "num", "pct:0", "num", "text"],
+              note="Einordnung nach den Snapshot-Regeln des Frameworks (calculate_*), Score und Beitrag (Punkte "
+                   "0–100) nach den Zeitreihen-Regeln von simulate_all_indicators – deshalb können Einordnung und "
+                   "Score auseinanderliegen.")
 
     # ---- divergences (last `win` days) ------------------------------------------------------------
     div = [("Kurs vs. TailDex", TailDex().detect_divergence(prices, ts["tdex"], window=win),
@@ -286,7 +300,7 @@ def run(params, data, out):
             "Kurs auf Hoch, SMFI fällt: Profis verkaufen in die Rally")]
     drows = [[name, "ja" if d.get("divergence") else "nein", DIVERGENCE.get(d.get("type", "NONE"), "keine"),
               WARNING_LEVEL.get(d.get("warning_level", "NEUTRAL"), "–"), meaning] for name, d, meaning in div]
-    drows.append(["VIX-Kurve kippt in Backwardation", "ja" if inv.get("inversion_event") else "nein",
+    drows.append([f"VIX-Kurve kippt ({ratio_name} steigt über 1)", "ja" if inv.get("inversion_event") else "nein",
                   STRUCTURE[cur["structure"]], "hoch" if inv.get("inversion_event") else "niedrig",
                   f"{ratio_name} zuletzt {de(inv.get('current_ratio', ratio[-1]), 3)}, "
                   f"Spanne {de(inv.get('min_ratio', ratio[-1]), 3)}–{de(inv.get('max_ratio', ratio[-1]), 3)}"])
@@ -325,10 +339,11 @@ def run(params, data, out):
         prow = []
         for a, b in sorted(top):
             peak = a + int(np.argmax(comp[a:b + 1]))
-            after = min(b + h, n - 1)
             prow.append([label(a), label(b), b - a + 1, float(comp[peak]), float(prices[b] / prices[max(a - 1, 0)] - 1),
-                         float(prices[after] / prices[b] - 1) if after > b else None])
+                         float(prices[b + h] / prices[b] - 1) if b + h < n else None])
         out.table("Stärkste Warnphasen (Komposit ≥ 75)",
                   ["Beginn", "Ende", "Tage", "Spitze", "Kurs in der Phase", f"Kurs {h} T danach"], prow,
                   formats=["text", "text", "int", "num", "pct", "pct"],
-                  note="Phasen mit weniger als 6 Tagen Abstand sind zusammengefasst.")
+                  note="Phasen mit weniger als 6 Tagen Abstand sind zusammengefasst. „Kurs in der Phase“ misst vom "
+                       "Schluss des Vortags bis zum letzten Tag der Phase; leer = noch keine "
+                       f"{h} Handelstage danach.")

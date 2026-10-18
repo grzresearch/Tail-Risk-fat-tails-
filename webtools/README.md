@@ -30,14 +30,15 @@ SPEC = {
     "group": "risk",                    # data | risk | physics | regime | warning | surface | dashboard | scripts
     "order": 20,                        # Reihenfolge innerhalb der Gruppe (optional)
     "summary": "Ein Satz, was man lernt.",
-    "description": "Absätze durch Leerzeile getrennt. **fett** und `code` erlaubt.",
+    "description": "Absätze durch Leerzeile getrennt. **fett**, *kursiv* und `code` erlaubt.",
     "needs": ["returns"],               # [] = Simulation; sonst returns / prices / vix / vix3m / dates
     "params": [
         {"name": "confidence", "type": "float", "default": 0.99, "min": 0.9, "max": 0.999,
          "step": 0.001, "label": "Konfidenzniveau", "help": "optional"},
         {"name": "method", "type": "select", "default": "hill", "label": "Schätzer",
          "options": [{"value": "hill", "label": "Hill"}, {"value": "pickands", "label": "Pickands"}]},
-        {"name": "show_fit", "type": "bool", "default": True, "label": "Fit einblenden"},
+        {"name": "show_fit", "type": "bool", "default": True, "label": "Fit einblenden",
+         "show_if": {"method": ["hill"]}},     # optional: nur sichtbar, wenn method == "hill"
     ],
     "covers": ["src.models.risk_metrics.TailRiskMetrics.var_historical", "..."],
     "cost": "fast",                     # fast (< 2 s, Live-Update) | medium | slow (> 20 s)
@@ -47,7 +48,7 @@ SPEC = {
 def run(params, data, out):
     r = data.returns                    # np.ndarray, tägliche Log-Renditen (dezimal)
     out.metric("VaR 99 %", 0.023, "pct", hint="…", status=None, badge="")  # badge: eigener Plakettentext
-    out.table("Titel", ["Spalte", "Wert"], [["a", 0.1]], formats=["text", "pct"])
+    out.table("Titel", ["Spalte", "Wert"], [["a", 0.1]], formats=["text", "pct:1"])  # Code[:Nachkommastellen]
     out.chart(C.xy("Titel", [C.trace("Reihe", x, y)], x=C.axis("x"), y=C.axis("y", fmt="pct")))
     out.figure(fig, "Bildunterschrift")  # Matplotlib-Figur aus src/ → PNG
     out.note("Hinweis", "info")          # info | warning | success
@@ -77,6 +78,10 @@ def run(params, data, out):
   min/max-erhaltend ausgedünnt. Fächer und Konfidenzbänder mit `C.envelope(name, x, unten, oben)`,
   Referenzlinien mit `C.hline` / `C.vline` (Beschriftungen weichen sich automatisch aus).
 * `set_verdict` nur, wenn das Werkzeug eine echte Einschätzung liefert.
+* Parameter, die nur für eine Ansicht oder einen Schalter gelten, bekommen `"show_if": {"param": [werte]}`;
+  sie werden dann nur angezeigt, wenn die Bedingung erfüllt ist (keine „Nur …“-Hinweise im Hilfetext).
+* Texte in Beschreibungen, Hinweisen, Untertiteln, Tabellennotizen und Urteilen dürfen **fett**, *kursiv*
+  und `code` enthalten.
 * Matplotlib-Figuren aus `src/visualization` sind willkommen (`out.figure`), interaktive
   Plotly-Specs (`out.chart`) sind die Hauptdarstellung.
 

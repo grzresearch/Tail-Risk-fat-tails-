@@ -12,9 +12,9 @@ DAYS = 252
 
 SPEC = {
     "id": "evt-lab",
-    "title": "EVT-Labor: GEV und GPD",
+    "title": "EVT-Labor: GEV & GPD",
     "group": "risk",
-    "order": 35,
+    "order": 30,
     "summary": "Simuliere Verluste mit bekanntem Rand und sieh zu, wie Blockmaxima (GEV) und Peaks over Threshold "
                "(GPD) den Formparameter ξ zurückgewinnen.",
     "description": (
@@ -25,7 +25,7 @@ SPEC = {
         "**Generalisierten Pareto-Verteilung (GPD)**.\n\n"
         "Wähle eine Ausgangsverteilung, simuliere Tagesverluste und vergleiche die geschätzten ξ mit der Theorie. "
         "Der **Likelihood-Quotienten-Test** prüft, ob ξ signifikant von 0 abweicht; bei der Normalverteilung "
-        "konvergieren Maxima nur langsam, kleine negative Schätzungen sind daher normal.\n\n"
+        "konvergieren Maxima nur sehr langsam, Schätzungen um −0,1 bis −0,15 sind daher normal.\n\n"
         "Im **Wiederkehr-Diagramm** ist die Gumbel-Form eine Gerade über der logarithmischen Zeitachse. Fréchet "
         "biegt nach oben ab (die nächste Katastrophe ist größer, als die Gerade vermuten lässt), Weibull flacht ab. "
         "Verluste sind positive Dezimalzahlen (0,05 = 5 % an einem Tag)."
@@ -37,7 +37,7 @@ SPEC = {
                      {"value": "gaussian", "label": "Normalverteilung (Gumbel, ξ = 0)"},
                      {"value": "bounded", "label": "Begrenzt auf 5 % (Weibull, ξ = −½)"}]},
         {"name": "nu", "type": "float", "default": 3.0, "min": 1.5, "max": 20.0, "step": 0.5,
-         "label": "Student-t: Freiheitsgrade ν", "help": "Nur für die Student-t. ξ = 1/ν."},
+         "label": "Student-t: Freiheitsgrade ν", "help": "ξ = 1/ν.", "show_if": {"parent": ["student_t"]}},
         {"name": "n_obs", "type": "int", "default": 5040, "min": 1000, "max": 50000, "step": 252,
          "label": "Simulierte Handelstage", "help": "5.040 = 20 Jahre."},
         {"name": "block_size", "type": "int", "default": 20, "min": 5, "max": 100, "step": 1,
@@ -65,6 +65,10 @@ SPEC = {
 
 def _de(x, digits=2):
     return f"{x:.{digits}f}".replace(".", ",")
+
+
+def _p(p):
+    return "< 0,001" if p < 0.001 else _de(p, 3)
 
 
 def _domain(xi, tol=0.05):
@@ -110,6 +114,7 @@ def run(params, data, out):
     ll_exp = float(np.sum(np.log(np.maximum(expo.pdf(exc), 1e-300))))
     lr_gpd = max(0.0, 2 * (ll_gpd - ll_exp))
     p_gpd = float(stats.chi2.sf(lr_gpd, 1))
+    ks_gpd = stats.kstest(exc, gpd.cdf)
 
     xi_gev, xi_gpd = float(gev.xi), float(gpd.xi)
     out.metric("ξ Theorie", xi_true, "num", hint=_domain(xi_true, 1e-9))
@@ -161,30 +166,38 @@ def run(params, data, out):
     # --- chart 4: return level plot in years
     t_blocks = np.geomspace(1.05, 2000, 120)
     years = t_blocks * m / DAYS
-    top = min(nb, 400)  # the largest maxima carry the information; keeps the payload small
-    rank = np.arange(1, top + 1)
+    k_max = max(2, min(nb, int((nb + 1) / t_blocks[0])))
+    rank = np.unique(np.geomspace(1, k_max, 28).round().astype(int))  # evenly spread on the log axis
     emp_years = (nb + 1) / rank * m / DAYS
     out.chart(C.xy(
         "Wiederkehrniveau: Blockmaximum, das einmal in T Jahren überschritten wird",
-        [C.trace(f"GEV (ξ = {_de(xi_gev)})", years, gev.return_level(t_blocks), color=1, width=2.5),
+        [C.trace("Beobachtete Blockmaxima", emp_years, np.sort(maxima)[::-1][rank - 1], type="scatter", color=4,
+                 size=5, decimate_to=None),  # first, so the fitted curves stay visible on top
          C.trace("Gumbel (ξ = 0)", years, gumbel.return_level(t_blocks), color="muted", dash=True),
-         C.trace("Beobachtete Blockmaxima", emp_years, np.sort(maxima)[::-1][:top], type="scatter", color=4, size=6,
-                 decimate_to=None)],
+         C.trace(f"GEV (ξ = {_de(xi_gev)})", years, gev.return_level(t_blocks), color=1, width=2.5)],
         x=C.axis("Wiederkehrperiode (Jahre)", type="log"), y=C.axis("Verlust", fmt="pct", digits=0),
         subtitle="Gumbel ist hier eine Gerade. Je größer ξ, desto stärker steigt die Kurve für seltene Ereignisse.",
     ))
 
-    q99_gpd, q99_exp = float(gpd.ppf(0.99)), float(expo.ppf(0.99))
-    out.table("Schätzungen im Vergleich", ["Methode", "ξ geschätzt", "ξ Theorie", "Datenpunkte", "LR-Test ξ = 0: p",
-                                          "Anpassung"],
-              [["GEV (Blockmaxima)", xi_gev, xi_true, nb, p_gev, f"KS p = {_de(float(ks_gev.pvalue), 2)}"],
-               ["GPD (Peaks over Threshold)", xi_gpd, xi_true, st["n_exceedances"], p_gpd,
-                f"99-%-Überschreitung {_de(100 * q99_gpd)} % (exponentiell {_de(100 * q99_exp)} %)"]],
-              formats=["text", "num", "num", "int", "num", "text"],
-              note="LR-Test: Likelihood-Quotient gegen das Modell mit ξ = 0 (Gumbel bzw. Exponential), χ² mit 1 Freiheitsgrad.")
+    out.table("Schätzungen im Vergleich", ["Methode", "ξ geschätzt", "ξ Theorie", "Datenpunkte",
+                                          "LR-Test ξ = 0: p-Wert", "KS-Test: p-Wert"],
+              [["GEV (Blockmaxima)", xi_gev, xi_true, nb, _p(p_gev), _p(float(ks_gev.pvalue))],
+               ["GPD (Peaks over Threshold)", xi_gpd, xi_true, st["n_exceedances"], _p(p_gpd),
+                _p(float(ks_gpd.pvalue))]],
+              formats=["text", "num", "num", "int", "text", "text"],
+              note="LR-Test: Likelihood-Quotient gegen das Modell mit ξ = 0 (Gumbel bzw. Exponential), χ² mit "
+                   "1 Freiheitsgrad; kleiner p-Wert = ξ ≠ 0. KS-Test: großer p-Wert = das angepasste Modell passt "
+                   "(optimistisch, weil die Parameter aus denselben Daten stammen).")
     if parent == "gaussian" and xi_gev < -0.03:
         out.note("Normalverteilte Maxima konvergieren nur logarithmisch langsam gegen Gumbel. Bei endlichen Blöcken "
-                 "ist ein leicht negatives ξ daher typisch; größere Blöcke bringen die Schätzung näher an 0.", "info")
+                 "ist ein negatives ξ daher typisch – selbst mit unendlich vielen Blöcken etwa −0,14 bei 20 und −0,10 "
+                 "bei 100 Tagen je Block. Der LR-Test erkennt diese Abweichung von Gumbel zu Recht; das heißt aber "
+                 "nicht, dass der Rand begrenzt ist.", "info")
+    if parent == "student_t" and xi_true - max(xi_gev, xi_gpd) > 0.08:
+        out.note(f"Beide Schätzungen liegen unter ξ = 1/ν = {_de(xi_true)}. Das ist bei der Student-t typisch: Ihr Rand "
+                 "ist erst weit draußen ein reines Potenzgesetz, bei endlichen Blöcken und Schwellen wird ξ "
+                 "unterschätzt. Größere Blöcke oder eine höhere Schwelle verringern die Verzerrung, vergrößern aber "
+                 "die Streuung.", "info")
     if parent == "student_t" and nu <= 2:
         out.note("Mit ν ≤ 2 hat die Student-t unendliche Varianz – ein Fall, den die Normalverteilung gar nicht kennt.",
                  "warning")
