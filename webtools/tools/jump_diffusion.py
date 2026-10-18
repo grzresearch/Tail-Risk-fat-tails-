@@ -6,7 +6,6 @@ from scipy import stats
 from src.physics.ornstein_uhlenbeck import JumpDiffusionRiskAnalyzer, compute_ou_coordinates
 
 from .. import charts as C
-from ..core import ToolError
 from ..data import index_axis
 
 SPEC = {
@@ -26,7 +25,8 @@ SPEC = {
         "Sprünge gleichmäßig kommen (wie es das Poisson-Modell annimmt) oder in Krisen gehäuft – meist "
         "Letzteres. Die Zerlegung je Schwelle zeigt, wie stark das Ergebnis von dieser Definition abhängt. "
         "Die OU-Koordinaten fitten in jedem rollierenden Fenster einen OU-Prozess auf |Rendite|: X ist das "
-        "Vola-Niveau, Y der aktuelle Ausschlag, Z die Rückstellgeschwindigkeit.\n\n"
+        "Vola-Niveau, Z die Rückstellgeschwindigkeit (Y, der letzte Ausschlag |r|, steckt schon im ersten "
+        "Diagramm).\n\n"
         "Hinweis: Tagesrenditen haben kaum Gedächtnis. Der OU-Fit landet deshalb meist im Grenzfall "
         "„weißes Rauschen“ (θ wird gedeckelt, Halbwertszeit ≈ 0,1 Tage) – die Diffusion entspricht dann einer "
         "Normalverteilung mit der Streuung der ruhigen Tage."
@@ -78,9 +78,6 @@ def run(params, data, out):
     r = data.returns
     n = data.n
     thr, conf, n_sim, seed = params["threshold"], params["confidence"], params["n_simulations"], params["seed"]
-    if n < 2 * params["window"] + 20:
-        raise ToolError(f"Zu wenige Beobachtungen ({n}) für ein Koordinaten-Fenster von {params['window']} Tagen.")
-
     ja = JumpDiffusionRiskAnalyzer()
     dec = ja.tail_risk_decomposition(r, confidence=conf, threshold=thr, n_simulations=n_sim, seed=seed)
     has_model = ja.ou_model is not None
@@ -99,7 +96,9 @@ def run(params, data, out):
     out.metric(f"Historischer VaR {lvl}", var_hist, "pct", hint=f"Normalverteilung: {_de(100 * var_gauss)} %")
     out.metric("Erkannte Sprünge", int(dec["n_jumps"]), "int",
                hint=f"{_de(dec['jump_intensity'] * 252, 1)} pro Jahr ({_de(100 * dec['jump_intensity'], 2)} % der Tage)")
-    out.metric("Ø-Sprung", dec["jump_mean"], "pct", hint=f"Streuung {_de(100 * dec['jump_std'])} %")
+    n_jumps = int(dec["n_jumps"])
+    out.metric("Ø-Sprung", dec["jump_mean"] if n_jumps else None, "pct",
+               hint=f"Streuung {_de(100 * dec['jump_std'])} %" if n_jumps > 1 else "zu wenige Sprünge für eine Streuung")
     out.metric("Anteil der Sprünge an Σ|r|", dec["jump_contribution"], "pct", digits=1,
                hint="so viel der gesamten Bewegung steckt in den Sprungtagen")
     if has_model:
@@ -129,15 +128,20 @@ def run(params, data, out):
     counts = np.bincount(inv, weights=is_jump.astype(float), minlength=len(years))
     days = np.bincount(inv, minlength=len(years))
     expected = dec["jump_intensity"] * days
-    disp = float(np.var(counts) / np.mean(counts)) if np.mean(counts) > 0 else None
-    out.chart(C.xy(
-        "Sprünge je Jahr",
-        [C.trace("Sprünge", years, counts, type="bar", color=1),
-         C.trace("Poisson-Erwartung", years, expected, color="muted", dash=True)],
-        x=C.axis("Jahr", type="category"), y=C.axis("Anzahl", fmt="int"), height=300,
-        subtitle=(f"Streuungsindex Var/Mittel = {_de(disp, 1)} (Poisson: 1). Größer heißt: Sprünge kommen gehäuft."
-                  if disp is not None else "Keine Sprünge erkannt."),
-    ))
+    # Pearson dispersion index with each year's exposure (partial years count less); Poisson: about 1
+    ok = expected > 0
+    disp = (float(np.sum((counts[ok] - expected[ok]) ** 2 / expected[ok]) / max(1, ok.sum() - 1))
+            if counts.sum() > 0 and ok.sum() > 1 else None)
+    if counts.sum() > 0:
+        out.chart(C.xy(
+            "Sprünge je Jahr",
+            [C.trace("Sprünge", years, counts, type="bar", color=1),
+             C.trace("Poisson-Erwartung", years, expected, color="muted", dash=True)],
+            x=C.axis("Jahr", type="category"), y=C.axis("Anzahl", fmt="int"), height=300,
+            subtitle=(f"Streuungsindex = {_de(disp, 1)} (Poisson: ≈ 1, Teiljahre gewichtet). Größer heißt: "
+                      "Sprünge kommen gehäuft." if disp is not None else
+                      "Die Reihe umfasst nur ein Jahr – ob Sprünge gehäuft kommen, lässt sich so nicht prüfen."),
+        ))
 
     # Decomposition across thresholds
     out.progress("VaR-Zerlegung für mehrere Schwellen …", 0.5)
@@ -156,17 +160,27 @@ def run(params, data, out):
     ))
 
     # OU coordinates of |r|
-    X, Y, Z = compute_ou_coordinates(r, window=params["window"])
-    valid = np.arange(2 * params["window"], n)
-    xs = [x[i] for i in valid]
-    out.chart(C.xy(
-        f"OU-Koordinaten von |Rendite| (Fenster {params['window']} Tage)",
-        [C.trace("Z: Rückstellgeschwindigkeit θ", xs, Z[valid], color=2, width=1),
-         C.trace("Y: aktueller Ausschlag |r|", xs, Y[valid], color="muted", width=1),
-         C.trace("X: Vola-Niveau μ", xs, X[valid], color=1, width=2.5)],
-        x=xa, y=C.axis("normiert (0 = Minimum, 1 = Maximum)", range=(0, 1.02)), height=320,
-        subtitle="Fenster ohne gültigen OU-Fit (negative Autokorrelation) setzt das Framework auf θ = 1.",
-    ))
+    w = params["window"]
+    if n >= 2 * w + 20:
+        X, _, Z = compute_ou_coordinates(r, window=w)
+        valid = np.arange(2 * w, n)
+        xs = [x[i] for i in valid]
+        out.chart(C.xy(
+            f"OU-Koordinate X: Vola-Niveau (Fenster {w} Tage)",
+            [C.trace("X: Niveau μ von |Rendite|", xs, X[valid], color=1, width=1.5)],
+            x=xa, y=C.axis("normiert (0 = Minimum, 1 = Maximum)", range=(0, 1.02)), height=260,
+            subtitle="Langfristiges Niveau des OU-Fits auf |Rendite| im Fenster – ein geglättetes Vola-Maß.",
+        ))
+        out.chart(C.xy(
+            f"OU-Koordinate Z: Rückstellgeschwindigkeit θ (Fenster {w} Tage)",
+            [C.trace("Z: θ von |Rendite|", xs, Z[valid], color=1, width=1)],
+            x=xa, y=C.axis("normiert (0 = Minimum, 1 = Maximum)", range=(0, 1.02)), height=260,
+            subtitle="1 = |Rendite| ist im Fenster weißes Rauschen (θ gedeckelt), Einbrüche nach unten = "
+                     "Vola-Schocks halten an (Vola-Cluster).",
+        ))
+    else:
+        out.note(f"Für die OU-Koordinaten mit einem Fenster von {w} Tagen ist die Reihe zu kurz (mindestens "
+                 f"{2 * w + 20} Tage). Verkleinere das Fenster auf höchstens {(n - 20) // 2} Tage.")
 
     rows = [["Modell: OU + Sprünge", dec["var_total"]], ["nur Diffusion (OU)", dec["var_continuous"]],
             ["Sprung-Aufschlag", dec["var_jump"]], ["Historisch (empirisches Quantil)", var_hist],
