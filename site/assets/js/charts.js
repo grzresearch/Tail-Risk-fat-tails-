@@ -9,11 +9,31 @@ export function loadPlotly() {
     const s = document.createElement('script');
     s.src = PLOTLY_URL;
     s.async = true;
-    s.onload = () => resolve(window.Plotly);
+    s.onload = () => { registerGermanLocale(window.Plotly); resolve(window.Plotly); };
     s.onerror = () => { plotlyP = null; reject(new Error('Diagrammbibliothek (Plotly) konnte nicht geladen werden.')); };
     document.head.appendChild(s);
   });
   return plotlyP;
+}
+
+// German month/day names and number formats for every chart (config.locale = 'de')
+function registerGermanLocale(Plotly) {
+  Plotly.register({
+    moduleType: 'locale', name: 'de',
+    dictionary: {
+      'Download plot as a png': 'Als PNG herunterladen', 'Zoom': 'Zoom', 'Pan': 'Verschieben',
+      'Zoom in': 'Vergrößern', 'Zoom out': 'Verkleinern', 'Reset axes': 'Achsen zurücksetzen',
+      'Autoscale': 'Automatisch skalieren', 'Reset camera to default': 'Kamera zurücksetzen',
+      'Orbital rotation': 'Rotation', 'Turntable rotation': 'Drehteller-Rotation',
+    },
+    format: {
+      days: ['Sonntag', 'Montag', 'Dienstag', 'Mittwoch', 'Donnerstag', 'Freitag', 'Samstag'],
+      shortDays: ['So', 'Mo', 'Di', 'Mi', 'Do', 'Fr', 'Sa'],
+      months: ['Januar', 'Februar', 'März', 'April', 'Mai', 'Juni', 'Juli', 'August', 'September', 'Oktober', 'November', 'Dezember'],
+      shortMonths: ['Jan', 'Feb', 'Mär', 'Apr', 'Mai', 'Jun', 'Jul', 'Aug', 'Sep', 'Okt', 'Nov', 'Dez'],
+      date: '%d.%m.%Y', decimal: ',', thousands: '.',
+    },
+  });
 }
 
 function tokens() {
@@ -56,9 +76,18 @@ function hoverFmt(ax) {
   return '.4~g';
 }
 
+// German date ticks at every zoom level: 09.08.2026 / 9. Aug / Aug 2026 / 2026
+const DATE_TICKS = [
+  { dtickrange: [null, 86400000], value: '%d.%m.%Y' },
+  { dtickrange: [86400000, 'M1'], value: '%-d. %b' },
+  { dtickrange: ['M1', 'M12'], value: '%b %Y' },
+  { dtickrange: ['M12', null], value: '%Y' },
+];
+
 function axisLayout(ax, t, extra = {}) {
   const type = ax.type === 'category' ? 'category' : ax.type || 'linear';
   return {
+    tickformatstops: type === 'date' ? DATE_TICKS : undefined,
     title: ax.label ? { text: ax.label, font: { size: 12, color: t.ink2 }, standoff: 8 } : undefined,
     type, tickformat: tickformat(ax), hoverformat: hoverFmt(ax),
     range: ax.range && type === 'log' ? ax.range.map((r) => Math.log10(r)) : ax.range,
@@ -84,7 +113,8 @@ function baseLayout(spec, t) {
 function xyFigure(spec, t) {
   const data = spec.traces.flatMap((tr) => {
     const c = color(tr.color, t);
-    const common = { name: tr.name, x: tr.x, y: tr.y, hovertemplate: undefined };
+    const common = { name: tr.name, x: tr.x, y: tr.y, hovertemplate: undefined,
+      error_y: tr.error ? { type: 'data', array: tr.error, visible: true, color: t.ink2, thickness: 1.2, width: 4 } : undefined };
     if (tr.type === 'envelope') {
       // lower edge (invisible) + upper edge filled down to it
       return [
