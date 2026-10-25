@@ -1,11 +1,57 @@
 # Tail Risk Modeling Framework
-## Physics-Based Fat Tail Analysis for Financial Markets
 
-> A framework for modeling Black-Swan events and tail risk using Lévy flights, Fokker-Planck dynamics, Tsallis statistics, and phase-transition theory.
+**Physics-based fat-tail analysis for financial markets.**
+
+[![GitHub Pages](https://github.com/grzresearch/Tail-Risk-fat-tails-/actions/workflows/pages.yml/badge.svg)](https://github.com/grzresearch/Tail-Risk-fat-tails-/actions/workflows/pages.yml)
+[![Live app](https://img.shields.io/badge/live%20app-Tail%20Risk%20Lab-blue)](https://grzresearch.github.io/Tail-Risk-fat-tails-/)
+
+A framework for modelling Black-Swan events and tail risk using Lévy flights, Fokker-Planck dynamics,
+Tsallis statistics and phase-transition theory. It combines distribution fitting, Value-at-Risk and
+Expected Shortfall, extreme value theory and regime detection with a five-indicator early-warning system
+and a 3D tail-risk surface, and validates them against the 2018, 2020, 2022 and 2025 S&P 500 crashes.
+Every feature also runs as an interactive tool in the browser.
 
 ---
 
-## Live Web App — Tail Risk Lab
+## Contents
+
+1. [Features](#features)
+2. [Live web app: Tail Risk Lab](#live-web-app-tail-risk-lab)
+3. [Installation](#installation)
+4. [Usage](#usage)
+5. [Why normal distributions fail](#why-normal-distributions-fail)
+6. [Physics-to-finance mapping](#physics-to-finance-mapping)
+7. [Core physics models](#core-physics-models)
+8. [Early warning system](#early-warning-system)
+9. [3D tail-risk surface](#3d-tail-risk-surface)
+10. [Historical crisis analyses](#historical-crisis-analyses)
+11. [Current market status](#current-market-status)
+12. [API reference](#api-reference)
+13. [Mathematical foundations](#mathematical-foundations)
+14. [Project structure](#project-structure)
+15. [References](#references)
+16. [License](#license)
+
+---
+
+## Features
+
+- **Physics models**: Lévy-stable distributions and Lévy flights, the fractional Fokker-Planck equation,
+  Tsallis statistics, the Ising market model with critical slowing down, and Ornstein-Uhlenbeck dynamics.
+- **Risk metrics**: Value-at-Risk (historical, Gaussian, Cornish-Fisher, EVT) and Expected Shortfall,
+  extreme value theory with the generalised Pareto distribution, rolling risk, tail-risk parity and regime detection.
+- **Early warning system**: five indicators (GEX, TDEX, VIX term structure, DIX, SMFI) combined into a
+  composite crash-risk score.
+- **Visualisation**: the 3D tail-risk surface (static and animated), 3D phase spaces and complete
+  dashboards.
+- **Historical analyses**: deep dives into Volmageddon 2018, COVID-19 2020, the 2022 bear market and the
+  2025 tariff crash.
+- **Browser app**: the unmodified Python code runs client-side on GitHub Pages, on daily refreshed FRED
+  data or on your own files.
+
+---
+
+## Live web app: Tail Risk Lab
 
 **[grzresearch.github.io/Tail-Risk-fat-tails-](https://grzresearch.github.io/Tail-Risk-fat-tails-/)**
 
@@ -23,39 +69,91 @@ WebAssembly, with NumPy, SciPy and Matplotlib) inside a Web Worker. The site is 
 - **Output**: interactive charts (each with a table view), the framework's own Matplotlib figures,
   Excel export, shareable links and print/PDF.
 
-```bash
-pip install -r requirements.txt
-python -m pytest -q tests                    # every web tool on real S&P 500 data + feature coverage
-python scripts/build_site.py                 # -> _site/
-python -m http.server -d _site 8000          # http://localhost:8000
-```
-
 Architecture and the tool contract: [`webtools/README.md`](webtools/README.md). Deployment:
 [`.github/workflows/pages.yml`](.github/workflows/pages.yml) (one-time setup: *Settings → Pages → Source: GitHub Actions*).
 
 ---
 
-## Table of Contents
+## Installation
 
-1. [Why Normal Distributions Fail](#why-normal-distributions-fail)
-2. [Physics → Finance Mapping](#physics--finance-mapping)
-3. [Core Physics Models](#core-physics-models)
-4. [Early Warning System](#early-warning-system)
-5. [3D Tail Risk Surface](#3d-tail-risk-surface)
-6. [Historical Crisis Analyses](#historical-crisis-analyses)
-7. [Current Market Status](#current-market-status)
-8. [Installation & Usage](#installation--usage)
-9. [API Reference](#api-reference)
-10. [Mathematical Foundations](#mathematical-foundations)
-11. [References](#references)
+```bash
+git clone https://github.com/grzresearch/Tail-Risk-fat-tails-.git
+cd Tail-Risk-fat-tails-
+python -m venv venv && source venv/bin/activate
+pip install -r requirements.txt
+```
+
+The dependencies are NumPy, SciPy, Matplotlib and pandas, plus pytest and pytest-cov for the test suite.
+Run all commands below from the repository root; the scripts write their figures to `outputs/`.
 
 ---
 
-## Why Normal Distributions Fail
+## Usage
+
+### Command line
+
+```bash
+python main.py --mode demo --output outputs/      # full demo with synthetic data
+python main.py --mode analyze --data returns.csv  # dashboard and report for your own data
+```
+
+`--mode analyze` reads a CSV file with a `returns` column, a `close` column (converted to log returns)
+or a single column of returns, and writes `analysis_dashboard.png` and `analysis_report.txt` to the
+output directory.
+
+### Figure scripts
+
+```bash
+python scripts/generate_tail_risk_surface.py             # 3D tail-risk surface
+python scripts/generate_tail_risk_surface_animation.py   # animated 3D surface (GIF)
+python scripts/generate_readme_figures.py                # documentation figures
+python scripts/generate_crisis_examples.py               # real-world crisis analyses
+python scripts/generate_early_warning_figures.py         # early-warning visuals
+python scripts/generate_crash_deep_dives.py              # per-crash deep-dive dashboards
+python scripts/generate_ews_jan2026.py                   # current-state EWS dashboard
+```
+
+### Python API
+
+```python
+import numpy as np
+from src.physics.levy_flight import LevyStableDistribution, estimate_tail_index
+from src.models.risk_metrics import TailRiskMetrics
+from src.visualization.dashboard import TailRiskDashboard
+
+returns = np.array([...])  # daily log returns
+
+alpha = estimate_tail_index(returns)
+levy = LevyStableDistribution.fit(returns)
+metrics = TailRiskMetrics(returns)
+
+print(f"alpha={alpha:.2f}  VaR99 hist={metrics.var_historical(0.99)*100:.2f}%")
+
+TailRiskDashboard(returns).create_full_dashboard(save_path='my_analysis.png')
+```
+
+![Full Dashboard](outputs/full_dashboard.png)
+
+### Tests and the web app locally
+
+```bash
+pip install -r requirements.txt
+python -m pytest -q tests                    # every web tool on real S&P 500 data + feature coverage
+python scripts/fetch_market_data.py          # optional: refresh site/data/market.json from FRED
+python scripts/build_site.py                 # -> _site/
+python -m http.server -d _site 8000          # http://localhost:8000
+```
+
+The browser checks in `tests/e2e/` run the built site with Playwright:
+`node tests/e2e/run_tools.mjs _site [tool-id ...]`.
+
+---
+
+## Why normal distributions fail
 
 Traditional finance — Modern Portfolio Theory, Black-Scholes, most VaR systems — assumes returns follow Gaussian distributions. Real markets do not.
 
-### Catastrophic Underestimation Under Gaussian Assumptions
+### Catastrophic underestimation under Gaussian assumptions
 
 | Event | Gaussian probability | Actual frequency | Underestimation |
 |-------|----------------------|------------------|-----------------|
@@ -72,7 +170,7 @@ Traditional finance — Modern Portfolio Theory, Black-Scholes, most VaR systems
 
 ---
 
-## Physics → Finance Mapping
+## Physics-to-finance mapping
 
 Each physics concept provides mathematical tools that capture market behaviour Gaussian models miss.
 
@@ -88,9 +186,9 @@ Each physics concept provides mathematical tools that capture market behaviour G
 
 ---
 
-## Core Physics Models
+## Core physics models
 
-### Lévy Flights
+### Lévy flights
 
 Random walks with occasional large jumps, characterised by a stability index α:
 
@@ -109,7 +207,7 @@ prob_crash = levy.tail_probability(-0.10, tail='left')  # P(loss > 10%)
 
 ![Tail Index Interpretation](outputs/tail_index_interpretation.png)
 
-### Fokker-Planck Equation
+### Fokker-Planck equation
 
 The fractional Fokker-Planck equation evolves probability density with power-law tails:
 
@@ -124,7 +222,7 @@ fpe = FokkerPlanckTailRisk(alpha=1.7)
 P_forecast = fpe.forecast_distribution(P0, horizon=20)
 ```
 
-### Tsallis Statistics
+### Tsallis statistics
 
 Non-extensive thermodynamics generalises Boltzmann-Gibbs entropy with an entropic index q:
 
@@ -139,7 +237,7 @@ from src.physics.tsallis_statistics import TsallisTailRiskModel
 risk = TsallisTailRiskModel().update(returns)
 ```
 
-### Phase Transitions
+### Phase transitions
 
 Market crashes behave like critical phase transitions in ferromagnets. Near the critical point markets exhibit *critical slowing down* — autocorrelation rises, variance increases, skewness becomes more negative — providing early warning.
 
@@ -163,7 +261,7 @@ ews = CriticalSlowingDownDetector(window=50).compute_ews(returns)
 
 ---
 
-## Early Warning System
+## Early warning system
 
 Forensic analysis of the 2018, 2020, 2022 and 2025 crashes identified five zero-lag indicators that consistently signalled risk before market dislocations.
 
@@ -177,7 +275,7 @@ Forensic analysis of the 2018, 2020, 2022 and 2025 crashes identified five zero-
 
 ![Warning Matrix](outputs/warning_matrix.png)
 
-### Composite Score
+### Composite score
 
 ```
 score = 0.35·GEX + 0.25·TDEX + 0.20·VIX_term + 0.10·DIX + 0.10·SMFI
@@ -208,9 +306,9 @@ analysis = analyze_crash_risk(returns, vix, verbose=True)
 
 ---
 
-## 3D Tail Risk Surface
+## 3D tail-risk surface
 
-The **3D Tail-Risk Surface** is the framework's primary visual for early crash detection. It plots the 30-day crash probability as a function of two market state variables:
+The **3D tail-risk surface** is the framework's primary visual for early crash detection. It plots the 30-day crash probability as a function of two market state variables:
 
 - **X**: annualised volatility (5 % to 85 %)
 - **Y**: tail index α — Lévy / Hill estimator (1.0 fat-tail … 2.0 Gaussian)
@@ -222,7 +320,12 @@ The "cliff" between the green plateau and the red/purple peak marks the regime t
 
 *Main panel: 3D surface with COVID-19, 2022 bear and 2025 tariff trajectories overlaid; current market (Jan 2026) marked with green diamond. Top right: top-down view with warning zones and 5 / 15 / 30 / 50 % probability contours. Bottom centre: crash probability over each crisis. Bottom right: reading guide.*
 
-### Animated Surface
+```bash
+python scripts/generate_tail_risk_surface.py
+# writes outputs/tail_risk_surface_3d.png
+```
+
+### Animated surface
 
 The animation below shows how the surface deforms when its driving variables change. The crash threshold sweeps from 3 % to 10 % so the "cliff" itself moves, a synthetic market trajectory walks from a calm regime into a crisis and back, and the camera rotates so the 3D shape stays unambiguous. Watch the crash-probability readout (bottom right) ramp up well *before* the trajectory reaches the red ridge — that lead time is the early-warning signal.
 
@@ -231,11 +334,6 @@ The animation below shows how the surface deforms when its driving variables cha
 ```bash
 python scripts/generate_tail_risk_surface_animation.py
 # writes outputs/tail_risk_surface_animation.gif
-```
-
-```bash
-python scripts/generate_tail_risk_surface.py
-# writes outputs/tail_risk_surface_3d.png
 ```
 
 ### How to read it
@@ -249,7 +347,7 @@ python scripts/generate_tail_risk_surface.py
 
 The contour lines on the floor (5 %, 15 %, 30 %, 50 % crash probability) act as early-warning thresholds — each crossing escalates the recommended response.
 
-### Phase-Space Variant
+### Phase-space variant
 
 For a complementary view across three coordinate systems (Lévy, Tsallis, phase-transition):
 
@@ -263,7 +361,7 @@ create_comprehensive_3d_dashboard(returns, save_path='outputs/3d_dashboard.png')
 
 ---
 
-## Historical Crisis Analyses
+## Historical crisis analyses
 
 The framework was validated against four S&P 500 crashes using historical data. Each crash had a distinct character; the early warning system detected all of them with crash-type-specific lead times.
 
@@ -297,7 +395,7 @@ The framework was validated against four S&P 500 crashes using historical data. 
 
 ---
 
-## Current Market Status
+## Current market status
 
 **As of January 3, 2026** all five EWS indicators are in the Normal zone.
 
@@ -332,79 +430,45 @@ The framework was validated against four S&P 500 crashes using historical data. 
 
 ---
 
-## Installation & Usage
+## API reference
 
-```bash
-git clone https://github.com/grzresearch/Tail-Risk-fat-tails-.git
-cd Tail-Risk-fat-tails-
-python -m venv venv && source venv/bin/activate
-pip install -r requirements.txt
-```
-
-```bash
-python main.py --mode demo --output outputs/      # full demo with synthetic data
-python scripts/generate_tail_risk_surface.py      # 3D tail-risk surface
-python scripts/generate_readme_figures.py         # documentation figures
-```
-
-```python
-import numpy as np
-from src.physics.levy_flight import LevyStableDistribution, estimate_tail_index
-from src.models.risk_metrics import TailRiskMetrics
-from src.visualization.dashboard import TailRiskDashboard
-
-returns = np.array([...])  # daily log returns
-
-alpha = estimate_tail_index(returns)
-levy = LevyStableDistribution.fit(returns)
-metrics = TailRiskMetrics(returns)
-
-print(f"alpha={alpha:.2f}  VaR99 hist={metrics.var_historical(0.99)*100:.2f}%")
-
-TailRiskDashboard(returns).create_full_dashboard(save_path='my_analysis.png')
-```
-
-![Full Dashboard](outputs/full_dashboard.png)
-
----
-
-## API Reference
+All modules live in the `src` package, e.g. `from src.physics.levy_flight import LevyStableDistribution`.
 
 ### Physics
 
 | Module | Symbols |
 |--------|---------|
-| `physics.levy_flight` | `LevyStableDistribution`, `LevyFlightProcess`, `estimate_tail_index`, `levy_flight_3d_coordinates` |
-| `physics.fokker_planck` | `FokkerPlanckSolver`, `FokkerPlanckTailRisk` |
-| `physics.tsallis_statistics` | `TsallisDistribution`, `TsallisTailRiskModel` |
-| `physics.phase_transitions` | `IsingMarketModel`, `CriticalSlowingDownDetector`, `MarketPhaseClassifier` |
+| `src.physics.levy_flight` | `LevyStableDistribution`, `LevyFlightProcess`, `estimate_tail_index`, `levy_flight_3d_coordinates` |
+| `src.physics.fokker_planck` | `FokkerPlanckSolver`, `FokkerPlanckTailRisk` |
+| `src.physics.tsallis_statistics` | `TsallisDistribution`, `TsallisTailRiskModel` |
+| `src.physics.phase_transitions` | `IsingMarketModel`, `CriticalSlowingDownDetector`, `MarketPhaseClassifier` |
 
 ### Risk metrics
 
 | Module | Symbols |
 |--------|---------|
-| `models.risk_metrics` | `TailRiskMetrics`, `RollingRiskMetrics`, `TailRiskParity` |
-| `models.extreme_value` | `GeneralizedParetoDistribution`, `EVTTailRiskAnalyzer` |
-| `models.regime_detection` | `MarkovRegimeSwitching`, `RegimeAwareTailRisk` |
+| `src.models.risk_metrics` | `TailRiskMetrics`, `RollingRiskMetrics`, `TailRiskParity` |
+| `src.models.extreme_value` | `GeneralizedParetoDistribution`, `EVTTailRiskAnalyzer` |
+| `src.models.regime_detection` | `MarkovRegimeSwitching`, `RegimeAwareTailRisk` |
 
 ### Early warning
 
 | Module | Symbols |
 |--------|---------|
-| `analysis.early_warning` | `NetGammaExposure`, `TailDex`, `VIXTermStructure`, `DarkIndex`, `SmartMoneyFlowIndex`, `CompositeEarlyWarningSystem`, `analyze_crash_risk` |
+| `src.analysis.early_warning` | `NetGammaExposure`, `TailDex`, `VIXTermStructure`, `DarkIndex`, `SmartMoneyFlowIndex`, `CompositeEarlyWarningSystem`, `analyze_crash_risk` |
 
 ### Visualisation
 
 | Module | Symbols |
 |--------|---------|
-| `visualization.risk_surface_3d` | `TailRisk3DSurface`, `create_comprehensive_3d_dashboard` |
-| `visualization.phase_space` | `PhaseSpaceAnalyzer`, `LyapunovExponentEstimator` |
-| `visualization.dashboard` | `TailRiskDashboard`, `create_summary_report` |
-| `visualization.early_warning_dashboard` | `EarlyWarningDashboard`, `CrashComparisonChart`, `EarlyWarning3DVisualization` |
+| `src.visualization.risk_surface_3d` | `TailRisk3DSurface`, `create_comprehensive_3d_dashboard` |
+| `src.visualization.phase_space` | `PhaseSpaceAnalyzer`, `LyapunovExponentEstimator` |
+| `src.visualization.dashboard` | `TailRiskDashboard`, `create_summary_report` |
+| `src.visualization.early_warning_dashboard` | `EarlyWarningDashboard`, `CrashComparisonChart`, `EarlyWarning3DVisualization` |
 
 ---
 
-## Mathematical Foundations
+## Mathematical foundations
 
 ### Lévy stable
 
@@ -443,6 +507,39 @@ G(y) = 1 − (1 + ξy/σ)^(−1/ξ)
 
 ---
 
+## Project structure
+
+```
+Tail-Risk-fat-tails-/
+├── src/                     # The framework, imported as src.*
+│   ├── physics/             # Lévy, Fokker-Planck, Tsallis, phase transitions, OU
+│   ├── models/              # EVT, risk metrics, regime detection, distributions
+│   ├── analysis/            # Sentiment + 5 early warning indicators
+│   ├── visualization/       # 3D surfaces, phase space, dashboards
+│   └── utils/               # Data loading, numerical helpers, statistics
+├── webtools/                # Browser tools for every feature (see webtools/README.md)
+├── site/                    # Static front end of the Tail Risk Lab and the FRED snapshot
+├── scripts/
+│   ├── build_site.py                            # Assemble the GitHub Pages site in _site/
+│   ├── fetch_market_data.py                     # Refresh site/data/market.json from FRED
+│   ├── generate_tail_risk_surface.py            # 3D early-warning surface
+│   ├── generate_tail_risk_surface_animation.py  # Animated 3D surface (GIF)
+│   ├── generate_readme_figures.py               # Documentation figures
+│   ├── generate_crisis_examples.py              # Real-world crisis analyses
+│   ├── generate_early_warning_figures.py        # Early-warning visuals
+│   ├── generate_crash_deep_dives.py             # Per-crash deep-dive dashboards
+│   └── generate_ews_jan2026.py                  # Current-state EWS dashboard
+├── tests/                   # pytest suite for src/ and every web tool; e2e/ browser checks
+├── outputs/                 # Generated visualisations (README figures and site gallery)
+├── .github/workflows/
+│   └── pages.yml            # Test, build and deploy the site to GitHub Pages
+├── main.py                  # Demo entry point
+├── requirements.txt
+└── README.md
+```
+
+---
+
 ## References
 
 1. Mandelbrot, B. (1963). "The Variation of Certain Speculative Prices." *Journal of Business* 36(4), 394-419.
@@ -456,35 +553,9 @@ G(y) = 1 − (1 + ξy/σ)^(−1/ξ)
 
 ---
 
-## Project Structure
-
-```
-Tail-Risk-fat-tails/
-├── src/
-│   ├── physics/        # Lévy, Fokker-Planck, Tsallis, phase transitions, OU
-│   ├── models/         # EVT, risk metrics, regime detection, distributions
-│   ├── analysis/       # Sentiment + 5 early warning indicators
-│   ├── visualization/  # 3D surfaces, phase space, dashboards
-│   └── utils/          # Data loading, numerical helpers, statistics
-├── scripts/
-│   ├── generate_tail_risk_surface.py      # 3D early-warning surface
-│   ├── generate_tail_risk_surface_animation.py  # Animated 3D surface (GIF)
-│   ├── generate_readme_figures.py         # Documentation figures
-│   ├── generate_crisis_examples.py        # Real-world crisis analyses
-│   ├── generate_early_warning_figures.py  # Early-warning visuals
-│   ├── generate_crash_deep_dives.py       # Per-crash deep-dive dashboards
-│   └── generate_ews_jan2026.py            # Current-state EWS dashboard
-├── outputs/            # Generated visualisations
-├── main.py                            # Demo entry point
-├── requirements.txt
-└── README.md
-```
-
----
-
 ## License
 
-MIT License — see LICENSE file.
+MIT License.
 
 ---
 
