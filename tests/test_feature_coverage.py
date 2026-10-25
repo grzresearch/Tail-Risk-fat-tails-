@@ -43,7 +43,7 @@ def test_every_public_symbol_is_covered_by_a_tool():
 
 
 def test_every_script_has_a_runner():
-    scripts = ["main.py"] + sorted(p.name for p in ROOT.glob("generate_*.py"))
+    scripts = ["main.py"] + sorted(p.relative_to(ROOT).as_posix() for p in ROOT.glob("scripts/generate_*.py"))
     covers = {c for spec in core.tool_specs() for c in spec["covers"]}
     missing = [s for s in scripts if f"script:{s}" not in covers]
     assert not missing, f"Scripts without a browser runner: {missing}"

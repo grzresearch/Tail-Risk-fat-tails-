@@ -6,12 +6,15 @@ Generate Educational Figures for README
 Creates clear, educational visualizations that explain tail risk concepts.
 """
 
+import sys
 import numpy as np
 import matplotlib.pyplot as plt
 from scipy import stats
 from pathlib import Path
 import warnings
 warnings.filterwarnings('ignore')
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))  # repository root, for src/
 
 # Set style for all plots
 plt.style.use('seaborn-v0_8-whitegrid')

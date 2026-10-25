@@ -3,7 +3,7 @@
 Assemble the GitHub Pages site into ``_site/``.
 
     site/                 static frontend (HTML, CSS, ES modules, market data)
-    py/bundle.zip         src/, webtools/, main.py, generate_*.py  -> unpacked in Pyodide
+    py/bundle.zip         src/, webtools/, main.py, scripts/generate_*.py  -> unpacked in Pyodide
     py/catalogue.json     tool catalogue, so the UI renders before Python boots
     gallery/*.png|gif     figures produced by the original scripts (outputs/)
     version.json          build id, commit, timestamp
@@ -30,7 +30,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 PY_SOURCES = ["src", "webtools"]
-PY_SCRIPTS = ["main.py"] + sorted(p.name for p in ROOT.glob("generate_*.py"))
+PY_SCRIPTS = ["main.py"] + sorted(p.relative_to(ROOT).as_posix() for p in ROOT.glob("scripts/generate_*.py"))
 IMPORT_RE = re.compile(r"""((?:from|import)\s*\(?\s*['"]\.{1,2}/[^'"?]+\.m?js)(['"])""")
 TEXT_SUFFIXES = {".html", ".js", ".mjs", ".css", ".json", ".webmanifest", ".svg"}
 

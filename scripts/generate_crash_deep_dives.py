@@ -33,7 +33,7 @@ warnings.filterwarnings('ignore')
 
 # Import our modules
 import sys
-sys.path.insert(0, str(Path(__file__).parent))
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))  # repository root, for src/
 
 from src.analysis.early_warning import CompositeEarlyWarningSystem
 

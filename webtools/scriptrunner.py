@@ -1,9 +1,10 @@
 """
-Run one of the repository's original scripts (``main.py``, ``generate_*.py``)
+Run one of the repository's original scripts (``main.py``, ``scripts/generate_*.py``)
 exactly as on the command line - but sandboxed, so it can live in the browser:
 
 * a fresh temporary working directory (scripts write to the relative ``outputs/``),
-* ``sys.argv`` set to the requested arguments,
+* ``sys.argv`` set to the requested arguments and the script's directory first on
+  ``sys.path`` (as ``python path/to/script.py`` does),
 * stdout captured (and, in Pyodide, also streamed live to the page),
 * matplotlib rcParams, cwd, argv and NumPy's global RNG restored afterwards,
 * every file the script produced collected for display / download.
@@ -11,6 +12,7 @@ exactly as on the command line - but sandboxed, so it can live in the browser:
 
 from __future__ import annotations
 
+import importlib.util
 import io
 import os
 import runpy
@@ -171,6 +173,30 @@ def shrink_gif(data: bytes, max_width: Optional[int], frame_step: int = 1) -> by
     return buf.getvalue()
 
 
+def import_script(script: str):
+    """Import a repository script (path relative to the repo root) as a module.
+
+    The scripts only do their work under ``__main__``, so importing one just defines
+    its functions.  The module is registered under its file name, so a script that
+    imports a sibling (``from generate_tail_risk_surface import ...``) shares it.
+    """
+    path = APP_ROOT / script
+    name = path.stem
+    if name in sys.modules:
+        return sys.modules[name]
+    spec = importlib.util.spec_from_file_location(name, path)
+    if spec is None or spec.loader is None:
+        raise ToolError(f"Script not found: {script}")
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[name] = module
+    try:
+        spec.loader.exec_module(module)
+    except BaseException:
+        sys.modules.pop(name, None)
+        raise
+    return module
+
+
 def run_script(script: str, argv: Optional[List[str]] = None, out: Optional[Result] = None,
                captions: Optional[dict] = None, max_log_chars: int = 60000, quality: str = "preview",
                files: Optional[dict] = None) -> dict:
@@ -204,6 +230,7 @@ def run_script(script: str, argv: Optional[List[str]] = None, out: Optional[Resu
             sys.argv = [script] + list(argv or [])
             if str(APP_ROOT) not in sys.path:
                 sys.path.insert(0, str(APP_ROOT))
+            sys.path.insert(0, str(path.parent))  # sibling imports, as on the command line
             if out is not None:
                 out.progress(f"Running {script} …")
             with _DpiCap(QUALITY.get(quality)), redirect_stdout(_Tee(buf, sys.__stdout__ if sys.__stdout__ else io.StringIO())):

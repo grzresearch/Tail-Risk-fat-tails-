@@ -1,9 +1,9 @@
 # webtools – the framework as web tools
 
-`webtools/` exposes every feature of `src/` (and every script in the repository root) as an
-interactive tool on the GitHub Pages site. The Python code runs **unmodified in the browser**
-(Pyodide 314.0.7 · CPython 3.14 · NumPy 2.4 · SciPy 1.18 · Matplotlib 3.10) inside a Web Worker.
-Locally and in CI the same code runs on CPython.
+`webtools/` exposes every feature of `src/` (and every original script: `main.py` and
+`scripts/generate_*.py`) as an interactive tool on the GitHub Pages site. The Python code runs
+**unmodified in the browser** (Pyodide 314.0.7 · CPython 3.14 · NumPy 2.4 · SciPy 1.18 ·
+Matplotlib 3.10) inside a Web Worker. Locally and in CI the same code runs on CPython.
 
 ```
 site/                 static front end (ES modules, no build tool)
@@ -63,9 +63,9 @@ against `needs` before `run` is called.
 
 * **Call the original code**, do not re-implement it. Web tools are thin adapters. Bugs in the
   original are fixed in `src/`, not worked around in the adapter.
-* `covers` lists full paths (`src.package.module.Symbol[.method]`; scripts as `script:<file>.py`).
-  `tests/test_feature_coverage.py` enforces that every public symbol in `src/` is covered by at
-  least one tool.
+* `covers` lists full paths (`src.package.module.Symbol[.method]`; scripts as `script:<path>.py`,
+  relative to the repository root). `tests/test_feature_coverage.py` enforces that every public
+  symbol in `src/` is covered by at least one tool.
 * Runtime with default parameters (CPython): fast < 2 s, medium < 8 s, slow < 40 s. Pyodide is
   2–4× slower. Larger simulations belong behind parameters, not in the defaults.
 * No file writes, no `plt.show()`, no network. Randomness always via a `seed` parameter.

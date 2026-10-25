@@ -13,6 +13,7 @@ Data sources: Yahoo Finance, Wikipedia, Financial news
 IMPORTANT: S&P 500 levels are calibrated to match actual historical values.
 """
 
+import sys
 import numpy as np
 import matplotlib.pyplot as plt
 from matplotlib.gridspec import GridSpec
@@ -21,6 +22,8 @@ from pathlib import Path
 from datetime import datetime, timedelta
 import warnings
 warnings.filterwarnings('ignore')
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))  # repository root, for src/
 
 plt.style.use('seaborn-v0_8-whitegrid')
 plt.rcParams['figure.dpi'] = 150

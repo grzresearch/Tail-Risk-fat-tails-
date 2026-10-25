@@ -1,4 +1,4 @@
-"""Early-warning analysis January 2026 – runs `generate_ews_jan2026.py` unmodified in the browser."""
+"""Early-warning analysis January 2026 – runs `scripts/generate_ews_jan2026.py` unmodified in the browser."""
 
 from ..scriptrunner import QUALITY_PARAM, script_tool
 
@@ -10,15 +10,15 @@ SPEC = {
     "summary": "The early-warning analysis at the start of 2026 with all five indicators and the "
                "composite score.",
     "description": (
-        "Runs `generate_ews_jan2026.py`: the state of the early-warning indicators on 3 Jan 2026 compared with "
+        "Runs `scripts/generate_ews_jan2026.py`: the state of the early-warning indicators on 3 Jan 2026 compared with "
         "past crises – the basis of the ‘Current Market Status’ section in the README."
     ),
     "needs": [],
     "params": [QUALITY_PARAM],
-    "covers": ["script:generate_ews_jan2026.py"],
+    "covers": ["script:scripts/generate_ews_jan2026.py"],
     "cost": "medium",
 }
 
 
 def run(params, data, out):
-    script_tool("generate_ews_jan2026.py", params, out)
+    script_tool("scripts/generate_ews_jan2026.py", params, out)

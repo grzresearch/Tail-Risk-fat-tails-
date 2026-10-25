@@ -2,12 +2,14 @@
 
 import numpy as np
 
-import generate_tail_risk_surface as surface_script  # repo-root script; main() only runs under __main__
 from src.physics.levy_flight import LevyStableDistribution, estimate_tail_index
 
 from .. import charts as C
 from ..data import fmt_date
 from ..core import ToolError
+from ..scriptrunner import import_script
+
+surface_script = import_script("scripts/generate_tail_risk_surface.py")  # main() only runs under __main__
 
 SPEC = {
     "id": "tail-risk-surface",
@@ -20,7 +22,7 @@ SPEC = {
         "The surface shows how likely **at least one one-day loss beyond the crash threshold** (default 5%) is "
         "over the next 30 trading days, as a function of **annualised volatility** (x) and the **tail index α** "
         "(y; 2 = Gaussian tail, lower = fatter tails). It is computed with `crash_probability` from "
-        "`generate_tail_risk_surface.py`: the power-law tail of a Lévy-stable distribution, "
+        "`scripts/generate_tail_risk_surface.py`: the power-law tail of a Lévy-stable distribution, "
         "p(day) = sin(πα/2)·α·(threshold/σ_day)^(−α)/π, scaled to the horizon with 1 − (1 − p)^30.\n\n"
         "On top sits **your dataset's trajectory**: for each day, volatility and α are estimated from the last N "
         "returns and placed on the surface; the dark line covers the last few weeks, the dark dot is today. The "
@@ -52,7 +54,7 @@ SPEC = {
          "help": "COVID-19, 2022 bear market, 2025 tariff crash – hand-drawn example paths, not measured data."},
     ],
     "covers": [
-        "script:generate_tail_risk_surface.py",
+        "script:scripts/generate_tail_risk_surface.py",
         "src.physics.levy_flight.estimate_tail_index",
         "src.physics.levy_flight.LevyStableDistribution.fit",
     ],

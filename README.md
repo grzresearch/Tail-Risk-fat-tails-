@@ -19,7 +19,7 @@ WebAssembly, with NumPy, SciPy and Matplotlib) inside a Web Worker. The site is 
   Uploaded data never leaves the browser.
 - **Tools**: distribution fitting, VaR/ES, extreme value theory, Lévy flights, Fokker-Planck, Tsallis,
   Ising model, Ornstein-Uhlenbeck, regime detection, early-warning system, 3D risk surfaces, dashboards,
-  and every original script (`main.py`, `generate_*.py`) re-run live.
+  and every original script (`main.py`, `scripts/generate_*.py`) re-run live.
 - **Output**: interactive charts (each with a table view), the framework's own Matplotlib figures,
   Excel export, shareable links and print/PDF.
 
@@ -229,12 +229,12 @@ The animation below shows how the surface deforms when its driving variables cha
 ![Animated 3D Tail Risk Surface](outputs/tail_risk_surface_animation.gif)
 
 ```bash
-python generate_tail_risk_surface_animation.py
+python scripts/generate_tail_risk_surface_animation.py
 # writes outputs/tail_risk_surface_animation.gif
 ```
 
 ```bash
-python generate_tail_risk_surface.py
+python scripts/generate_tail_risk_surface.py
 # writes outputs/tail_risk_surface_3d.png
 ```
 
@@ -343,8 +343,8 @@ pip install -r requirements.txt
 
 ```bash
 python main.py --mode demo --output outputs/      # full demo with synthetic data
-python generate_tail_risk_surface.py              # 3D tail-risk surface
-python generate_readme_figures.py                 # documentation figures
+python scripts/generate_tail_risk_surface.py      # 3D tail-risk surface
+python scripts/generate_readme_figures.py         # documentation figures
 ```
 
 ```python
@@ -466,15 +466,16 @@ Tail-Risk-fat-tails/
 │   ├── analysis/       # Sentiment + 5 early warning indicators
 │   ├── visualization/  # 3D surfaces, phase space, dashboards
 │   └── utils/          # Data loading, numerical helpers, statistics
+├── scripts/
+│   ├── generate_tail_risk_surface.py      # 3D early-warning surface
+│   ├── generate_tail_risk_surface_animation.py  # Animated 3D surface (GIF)
+│   ├── generate_readme_figures.py         # Documentation figures
+│   ├── generate_crisis_examples.py        # Real-world crisis analyses
+│   ├── generate_early_warning_figures.py  # Early-warning visuals
+│   ├── generate_crash_deep_dives.py       # Per-crash deep-dive dashboards
+│   └── generate_ews_jan2026.py            # Current-state EWS dashboard
 ├── outputs/            # Generated visualisations
 ├── main.py                            # Demo entry point
-├── generate_tail_risk_surface.py      # 3D early-warning surface
-├── generate_tail_risk_surface_animation.py  # Animated 3D surface (GIF)
-├── generate_readme_figures.py         # Documentation figures
-├── generate_crisis_examples.py        # Real-world crisis analyses
-├── generate_early_warning_figures.py  # Early-warning visuals
-├── generate_crash_deep_dives.py       # Per-crash deep-dive dashboards
-├── generate_ews_jan2026.py            # Current-state EWS dashboard
 ├── requirements.txt
 └── README.md
 ```
